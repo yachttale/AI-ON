@@ -42,3 +42,6 @@ next-env.d.ts
 
 # tool internals
 .omc/
+
+# 학생 개인정보 (PII) — 절대 커밋 금지 (아동 정보)
+*.xlsx
