@@ -1,7 +1,7 @@
 export type Role = 'instructor' | 'director'
 export type Attendance = '출석' | '지각' | '결석'
-export type SessionStatus = '진행중' | '통과'
 export type AbsenceReason = '입원' | '아파서' | '다른일정' | '여행' | '기타'
+export type Difficulty = '어려워함' | '조금어려워함' | '중간' | '조금쉽게' | '쉽게해결'
 
 export interface Profile {
   id: string
@@ -29,49 +29,28 @@ export interface SessionLog {
   student_id: string
   instructor_id: string
   attendance: Attendance
-  stroke: string | null
-  stage: string | null
-  status: SessionStatus | null
-  memo: string | null
   absence_reason: AbsenceReason | null
+  memo: string | null
   created_at: string
 }
 
-export interface CurriculumStandard {
+export interface SkillCheckpoint {
   id: string
-  stroke: string
-  stage: string
-  description: string | null
-  target_sessions: number | null
+  student_id: string
+  instructor_id: string | null
+  skill_key: string
+  difficulty: Difficulty | null
+  passed_at: string
+  memo: string | null
+  created_at: string
 }
 
 export interface SwimDistance {
   id: string
   student_id: string
-  logged_date: string
-  stroke: string
-  distance_m: number
-  created_at: string
-}
-
-export interface PlannedMakeup {
-  id: string
-  student_id: string
-  session_date: string
-  created_by: string | null
-  created_at: string
-}
-
-export interface CompletionRecord {
-  id: string
-  student_id: string
-  stroke: string
-  completed_date: string
-  total_sessions: number | null
-  record_seconds: number | null
   instructor_id: string | null
-  examiner_id: string | null
-  passed: boolean
-  notes: string | null
+  logged_date: string
+  distance_meters: number
+  memo: string | null
   created_at: string
 }

@@ -1,309 +1,182 @@
 export const dynamic = 'force-dynamic'
 
 import { createClient } from '@/lib/supabase/server'
-import StageBoard from '@/components/StageBoard'
-import StagnantAlert from '@/components/StagnantAlert'
-import InstructorCompletion from '@/components/InstructorCompletion'
-import StudentProgressList from '@/components/StudentProgressList'
-import MakeupScheduler from '@/components/MakeupScheduler'
-import type { StudentProgressItem } from '@/components/StudentProgressList'
+import Link from 'next/link'
+import { getProgressBySection, getCurrentStep, CURRICULUM, ALL_STEPS } from '@/lib/curriculum'
 import { getTodayEntries } from '@/lib/schedule'
-import { getPriorStrokeBonus, STROKES, MASTER_STROKES } from '@/lib/curriculum'
-import { getKSTDateString, getKSTDay, getKSTMonthStart } from '@/lib/utils'
-import type { Student, SessionLog } from '@/types/database'
-
-interface StudentWithStroke extends Student {
-  currentStroke: string | null
-  currentStage: string | null
-}
-
-interface StagnantStudent {
-  student: Student
-  stroke: string
-  stage: string
-  sessionCount: number
-}
-
-const DAY_NAMES = ['일요일', '월요일', '화요일', '수요일', '목요일', '금요일', '토요일']
+import type { SkillCheckpoint } from '@/types/database'
 
 export default async function DirectorDashboard() {
   const supabase = await createClient()
 
-  const threeDays = [2, 1, 0].map(offset => ({
-    offset,
-    dateStr: getKSTDateString(offset),
-    jsDay: getKSTDay(offset),
-    isToday: offset === 0,
-  }))
+  const today = new Date().toISOString().slice(0, 10)
+  const todayJsDay = new Date().getDay()
 
-  const todayStr = getKSTDateString(0)
-  const monthStart = getKSTMonthStart()
-
-  const { data: students } = await supabase.from('students').select('*').eq('is_active', true)
-  const studentIds = (students ?? []).map(s => s.id)
-
-  const [
-    { data: instructors },
-    { data: periodLogs },
-    { data: makeupRows },
-    { data: swimDistances },
-  ] = await Promise.all([
+  const [{ data: students }, { data: instructors }, { data: allCheckpoints }, { data: todayLogs }] = await Promise.all([
+    supabase.from('students').select('*').eq('is_active', true).order('name'),
     supabase.from('profiles').select('id, name').eq('role', 'instructor').order('name'),
-    supabase.from('session_logs')
-      .select('student_id, instructor_id, session_date')
-      .in('session_date', threeDays.map(d => d.dateStr)),
-    supabase.from('planned_makeups')
-      .select('id, student_id')
-      .eq('session_date', todayStr),
-    studentIds.length > 0
-      ? supabase.from('swim_distances')
-          .select('student_id, distance_m')
-          .in('student_id', studentIds)
-          .gte('logged_date', monthStart)
-      : Promise.resolve({ data: [] as { student_id: string; distance_m: number }[], error: null }),
+    supabase.from('skill_checkpoints').select('student_id, skill_key'),
+    supabase.from('session_logs').select('student_id, instructor_id, attendance').eq('session_date', today),
   ])
 
-  const monthlyDistanceMap = new Map<string, number>()
-  for (const row of swimDistances ?? []) {
-    monthlyDistanceMap.set(row.student_id, (monthlyDistanceMap.get(row.student_id) ?? 0) + row.distance_m)
+  const studentList = students ?? []
+  const checkpointMap = new Map<string, string[]>()
+  for (const cp of allCheckpoints ?? []) {
+    if (!checkpointMap.has(cp.student_id)) checkpointMap.set(cp.student_id, [])
+    checkpointMap.get(cp.student_id)!.push(cp.skill_key)
   }
 
-  // stroke 필터 없이 전체 기록 (출석 횟수 정확히 계산하기 위해)
-  const { data: allLogs } = await supabase
-    .from('session_logs')
-    .select('*')
-    .in('student_id', studentIds)
-    .order('session_date', { ascending: false })
+  const todayLogMap = new Map((todayLogs ?? []).map(l => [l.student_id, l.attendance]))
 
-  // 학생별 최신 영법/단계 (stroke 있는 로그만)
-  const seen = new Set<string>()
-  const latestPerStudent = (allLogs ?? []).filter(l => {
-    if (!l.stroke) return false
-    if (seen.has(l.student_id)) return false
-    seen.add(l.student_id)
-    return true
-  })
+  // 강사별 오늘 수업 완료율
+  const instructorStats = (instructors ?? []).map(inst => {
+    const scheduled = studentList.filter(
+      s => s.instructor_id === inst.id && getTodayEntries(s.schedule, todayJsDay).length > 0
+    )
+    const done = scheduled.filter(s => todayLogMap.has(s.id)).length
+    return { ...inst, scheduled: scheduled.length, done }
+  }).filter(i => i.scheduled > 0)
 
-  const studentsWithStroke: StudentWithStroke[] = (students ?? []).map(s => {
-    const latest = latestPerStudent.find(l => l.student_id === s.id)
-    return { ...s, currentStroke: latest?.stroke ?? null, currentStage: latest?.stage ?? null }
-  })
+  // 전체 통계
+  const totalSteps = ALL_STEPS.length
+  const avgProgress = studentList.length > 0
+    ? Math.round(studentList.reduce((sum, s) => sum + (checkpointMap.get(s.id)?.length ?? 0), 0) / studentList.length)
+    : 0
 
-  // 정체 학생: 초급 제외, 최근 출석 5회가 같은 단계
-  const strokeLogs = (allLogs ?? []).filter(l => l.stroke)
-  const stagnantStudents: StagnantStudent[] = studentsWithStroke
-    .filter(s => s.currentStroke && s.currentStroke !== '초급')
-    .flatMap(s => {
-      const attended = strokeLogs
-        .filter(l => l.student_id === s.id && l.attendance !== '결석')
-        .slice(0, 5)
-      if (attended.length < 5) return []
-      const allSame = attended.every(
-        l => l.stroke === attended[0].stroke && l.stage === attended[0].stage
-      )
-      if (!allSame) return []
-      const sessionCount = strokeLogs.filter(
-        l => l.student_id === s.id
-          && l.stroke === s.currentStroke
-          && l.stage === s.currentStage
-          && l.attendance !== '결석'
-      ).length
-      return [{ student: s, stroke: s.currentStroke!, stage: s.currentStage!, sessionCount }]
+  // 그룹별 학생 목록 (영법 섹션별)
+  const sectionGroups = CURRICULUM.map(sec => {
+    const secStudents = studentList.filter(s => {
+      const passed = checkpointMap.get(s.id) ?? []
+      const secSteps = sec.groups.flatMap(g => g.steps)
+      const secPassed = secSteps.filter(step => passed.includes(step.key)).length
+      const secTotal = secSteps.length
+      // 이 섹션이 "현재 진행 중"인 경우: 섹션 진도 0%초과 100%미만
+      return secPassed > 0 && secPassed < secTotal
     })
-
-  // 연속 결석 3회 이상 학생
-  interface AbsentAlert {
-    student: Student
-    count: number
-    lastDate: string
-  }
-  const consecutiveAbsent: AbsentAlert[] = (students ?? []).flatMap(s => {
-    const logs = (allLogs ?? []).filter(l => l.student_id === s.id)
-    if (logs.length === 0) return []
-    let count = 0
-    for (const log of logs) {
-      if (log.attendance === '결석') count++
-      else break
-    }
-    if (count < 3) return []
-    return [{ student: s, count, lastDate: logs[0].session_date }]
-  })
-
-  // 완성 달성 목록 (완성+통과 최초 기록 기준)
-  type CompletedEntry = { studentId: string; studentName: string; stroke: string; date: string }
-  const completedEntries: CompletedEntry[] = []
-  const seenCompletions = new Set<string>()
-  for (const log of (allLogs ?? [])) {
-    if (log.stage === '완성' && log.status === '통과' && log.stroke) {
-      const key = `${log.student_id}:${log.stroke}`
-      if (!seenCompletions.has(key)) {
-        seenCompletions.add(key)
-        const s = (students ?? []).find(s => s.id === log.student_id)
-        if (s) completedEntries.push({ studentId: s.id, studentName: s.name, stroke: log.stroke, date: log.session_date })
-      }
-    }
-  }
-  completedEntries.sort((a, b) => b.date.localeCompare(a.date))
-
-  // 학생별 완성 영법 목록: 현재 영법보다 앞선 MASTER_STROKES는 완성으로 간주
-  const completedStrokesMap = new Map<string, string[]>()
-  for (const s of studentsWithStroke) {
-    if (!s.currentStroke) continue
-    const currentIdx = (STROKES as readonly string[]).indexOf(s.currentStroke)
-    const completed = MASTER_STROKES.filter(ms => {
-      const msIdx = (STROKES as readonly string[]).indexOf(ms)
-      return msIdx < currentIdx
-    })
-    if (completed.length > 0) completedStrokesMap.set(s.id, completed)
-  }
-
-  // 학생별 진도 현황
-  const studentProgress: StudentProgressItem[] = studentsWithStroke.map(s => {
-    const logs = (allLogs ?? []).filter(l => l.student_id === s.id)
-    const totalAttended = logs.filter(l => l.attendance !== '결석').length + getPriorStrokeBonus(s.currentStroke)
-    const stageCount = strokeLogs.filter(
-      l => l.student_id === s.id
-        && l.stroke === s.currentStroke
-        && l.stage === s.currentStage
-        && l.attendance !== '결석'
-    ).length
-    const latestStatus = latestPerStudent.find(l => l.student_id === s.id)?.status ?? null
-    return {
-      id: s.id,
-      name: s.name,
-      stroke: s.currentStroke,
-      stage: s.currentStage,
-      status: latestStatus,
-      totalAttended,
-      stageCount,
-      completedStrokes: completedStrokesMap.get(s.id) ?? [],
-      monthlyDistance: monthlyDistanceMap.get(s.id),
-    }
-  })
-
-  // 오늘 보강 예약 목록
-  const initialMakeups = (makeupRows ?? []).flatMap(row => {
-    const s = (students ?? []).find(s => s.id === row.student_id)
-    if (!s) return []
-    return [{ id: row.id, studentId: s.id, studentName: s.name, grade: s.grade, schedule: s.schedule }]
-  })
-
-  // 강사별 완료율 계산
-  const completionRows = threeDays.map(({ dateStr, jsDay, isToday }) => {
-    const dayLabel = DAY_NAMES[jsDay]
-    const [, mm, dd] = dateStr.split('-')
-    const label = isToday
-      ? `${dayLabel} (오늘)`
-      : `${dayLabel} ${parseInt(mm)}/${parseInt(dd)}`
-
-    const stats = (instructors ?? []).map(inst => {
-      const scheduled = (students ?? []).filter(
-        s => s.instructor_id === inst.id && getTodayEntries(s.schedule, jsDay).length > 0
-      )
-      const logged = new Set(
-        (periodLogs ?? [])
-          .filter(l => l.session_date === dateStr && l.instructor_id === inst.id)
-          .map(l => l.student_id)
-      )
-      return {
-        name: inst.name,
-        total: scheduled.length,
-        done: scheduled.filter(s => logged.has(s.id)).length,
-      }
-    })
-
-    return { label, isToday, stats }
-  })
+    return { ...sec, students: secStudents }
+  }).filter(g => g.students.length > 0)
 
   return (
     <div className="space-y-6">
-      <section>
-        <MakeupScheduler
-          students={students ?? []}
-          todayStr={todayStr}
-          initialMakeups={initialMakeups}
-        />
-      </section>
+      {/* 전체 통계 */}
+      <div className="grid grid-cols-3 gap-3">
+        <div className="bg-white rounded-xl p-3 border border-gray-100 shadow-sm text-center">
+          <p className="text-xs text-gray-400 mb-1">재원</p>
+          <p className="text-2xl font-bold text-gray-800">{studentList.length}<span className="text-xs font-normal text-gray-400 ml-0.5">명</span></p>
+        </div>
+        <div className="bg-white rounded-xl p-3 border border-gray-100 shadow-sm text-center">
+          <p className="text-xs text-gray-400 mb-1">평균 단계</p>
+          <p className="text-2xl font-bold text-sky-600">{avgProgress}<span className="text-xs font-normal text-gray-400 ml-0.5">/{totalSteps}</span></p>
+        </div>
+        <div className="bg-white rounded-xl p-3 border border-gray-100 shadow-sm text-center">
+          <p className="text-xs text-gray-400 mb-1">강사</p>
+          <p className="text-2xl font-bold text-gray-800">{(instructors ?? []).length}<span className="text-xs font-normal text-gray-400 ml-0.5">명</span></p>
+        </div>
+      </div>
 
-      {consecutiveAbsent.length > 0 && (
-        <section>
-          <h2 className="text-base font-bold text-gray-700 mb-3">
-            ⚠️ 연속 결석
-            <span className="ml-2 text-red-400 font-normal text-sm">({consecutiveAbsent.length}명)</span>
-          </h2>
+      {/* 오늘 강사별 입력 현황 */}
+      {instructorStats.length > 0 && (
+        <div>
+          <h2 className="text-sm font-bold text-gray-700 mb-2">오늘 수업 입력 현황</h2>
           <div className="space-y-2">
-            {consecutiveAbsent.map(({ student, count, lastDate }) => (
-              <a
-                key={student.id}
-                href={`/director/student/${student.id}`}
-                className="flex items-center justify-between bg-red-50 rounded-xl px-4 py-3 border border-red-200"
-              >
-                <div>
-                  <p className="font-semibold text-gray-800">{student.name}</p>
-                  <p className="text-xs text-gray-500">마지막 수업: {lastDate}</p>
+            {instructorStats.map(inst => (
+              <div key={inst.id} className="bg-white rounded-xl px-4 py-3 border border-gray-100 shadow-sm flex items-center justify-between">
+                <span className="text-sm font-medium text-gray-700">{inst.name}</span>
+                <div className="flex items-center gap-2">
+                  <div className="flex gap-0.5">
+                    {Array.from({ length: inst.scheduled }).map((_, i) => (
+                      <div
+                        key={i}
+                        className={`w-2.5 h-2.5 rounded-full ${i < inst.done ? 'bg-green-400' : 'bg-gray-200'}`}
+                      />
+                    ))}
+                  </div>
+                  <span className="text-xs text-gray-400">{inst.done}/{inst.scheduled}</span>
                 </div>
-                <span className="text-sm font-bold text-red-500">{count}회 연속 결석</span>
-              </a>
-            ))}
-          </div>
-        </section>
-      )}
-
-      {completedEntries.length > 0 && (
-        <section>
-          <h2 className="text-base font-bold text-gray-700 mb-3">
-            🎉 완성 달성
-            <span className="ml-2 text-yellow-500 font-normal text-sm">({completedEntries.length}건)</span>
-          </h2>
-          <div className="space-y-2">
-            {completedEntries.map(entry => (
-              <div
-                key={`${entry.studentId}:${entry.stroke}`}
-                className="flex items-center justify-between bg-yellow-50 rounded-xl px-4 py-3 border border-yellow-200"
-              >
-                <div>
-                  <p className="font-semibold text-gray-800">{entry.studentName}</p>
-                  <p className="text-xs text-gray-500">{entry.stroke} 완성 · {entry.date}</p>
-                </div>
-                <a
-                  href={`/director/student/${entry.studentId}/certificate?stroke=${encodeURIComponent(entry.stroke)}&readonly=true`}
-                  className="text-xs px-3 py-1.5 bg-yellow-400 hover:bg-yellow-500 text-white rounded-lg font-semibold transition-colors"
-                >
-                  증명서 보기
-                </a>
               </div>
             ))}
           </div>
-        </section>
+        </div>
       )}
 
-      <section>
-        <h2 className="text-base font-bold text-gray-700 mb-3">강사별 입력 현황</h2>
-        <InstructorCompletion rows={completionRows} />
-      </section>
+      {/* 영법별 학생 현황 */}
+      {sectionGroups.map(sec => (
+        <div key={sec.key}>
+          <h2 className="text-sm font-bold mb-2 flex items-center gap-2" style={{ color: sec.color }}>
+            <span className="w-2 h-2 rounded-full inline-block" style={{ backgroundColor: sec.color }} />
+            {sec.label} 진행 중 ({sec.students.length}명)
+          </h2>
+          <div className="space-y-2">
+            {sec.students.map(s => {
+              const passed = checkpointMap.get(s.id) ?? []
+              const progress = getProgressBySection(passed)
+              const currentStep = getCurrentStep(passed)
+              const inst = (instructors ?? []).find(i => i.id === s.instructor_id)
 
-      <section>
-        <h2 className="text-base font-bold text-gray-700 mb-3">단계별 현황</h2>
-        <StageBoard students={studentsWithStroke} completedStrokesMap={Object.fromEntries(completedStrokesMap)} />
-      </section>
+              return (
+                <Link
+                  key={s.id}
+                  href={`/director/student/${s.id}`}
+                  className="block bg-white rounded-xl px-4 py-3 border border-gray-100 shadow-sm"
+                >
+                  <div className="flex items-center justify-between mb-1.5">
+                    <div>
+                      <span className="font-semibold text-gray-800 text-sm">{s.name}</span>
+                      {s.grade && <span className="text-xs text-gray-400 ml-2">{s.grade}</span>}
+                    </div>
+                    <span className="text-xs text-gray-400">{inst?.name ?? '미배정'}</span>
+                  </div>
+                  <p className="text-xs text-gray-500 mb-2">{currentStep?.label ?? '완료'}</p>
+                  <div className="flex gap-1">
+                    {CURRICULUM.map(csec => {
+                      const p = progress[csec.key]
+                      return (
+                        <div key={csec.key} className="flex-1">
+                          <div className="h-1 bg-gray-100 rounded-full overflow-hidden">
+                            <div
+                              className="h-full rounded-full"
+                              style={{ width: `${p.percent}%`, backgroundColor: csec.color }}
+                            />
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </Link>
+              )
+            })}
+          </div>
+        </div>
+      ))}
 
-      <section>
-        <h2 className="text-base font-bold text-gray-700 mb-3">
-          정체 학생
-          {stagnantStudents.length > 0 && (
-            <span className="ml-2 text-amber-500 text-sm">({stagnantStudents.length}명)</span>
-          )}
-        </h2>
-        <StagnantAlert stagnantStudents={stagnantStudents} />
-      </section>
-
-      <section>
-        <h2 className="text-base font-bold text-gray-700 mb-3">
-          학생 진도 현황
-          <span className="ml-2 text-gray-400 font-normal text-sm">({studentProgress.length}명 재원)</span>
-        </h2>
-        <StudentProgressList students={studentProgress} />
-      </section>
+      {/* 아직 초보 단계 학생 */}
+      {(() => {
+        const notStarted = studentList.filter(s => (checkpointMap.get(s.id)?.length ?? 0) === 0)
+        if (notStarted.length === 0) return null
+        return (
+          <div>
+            <h2 className="text-sm font-bold text-gray-400 mb-2">미시작 ({notStarted.length}명)</h2>
+            <div className="space-y-2">
+              {notStarted.map(s => {
+                const inst = (instructors ?? []).find(i => i.id === s.instructor_id)
+                return (
+                  <Link
+                    key={s.id}
+                    href={`/director/student/${s.id}`}
+                    className="block bg-gray-50 rounded-xl px-4 py-3 border border-gray-100 flex items-center justify-between"
+                  >
+                    <div>
+                      <span className="font-semibold text-gray-600 text-sm">{s.name}</span>
+                      {s.grade && <span className="text-xs text-gray-400 ml-2">{s.grade}</span>}
+                    </div>
+                    <span className="text-xs text-gray-400">{inst?.name ?? '미배정'}</span>
+                  </Link>
+                )
+              })}
+            </div>
+          </div>
+        )
+      })()}
     </div>
   )
 }

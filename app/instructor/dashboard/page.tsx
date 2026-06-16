@@ -1,134 +1,109 @@
-import { createClient } from '@/lib/supabase/server'
-import { redirect } from 'next/navigation'
-import { getPriorStrokeBonus, STROKES, MASTER_STROKES } from '@/lib/curriculum'
-import StudentProgressList from '@/components/StudentProgressList'
-import type { StudentProgressItem } from '@/components/StudentProgressList'
+'use client'
 
-export default async function InstructorDashboardPage() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) redirect('/login')
+import { useEffect, useState } from 'react'
+import Link from 'next/link'
+import { createClient } from '@/lib/supabase/client'
+import { getProgressBySection, getCurrentStep, CURRICULUM, ALL_STEPS } from '@/lib/curriculum'
+import type { Student, SkillCheckpoint } from '@/types/database'
 
-  const { data: students } = await supabase
-    .from('students')
-    .select('*')
-    .eq('instructor_id', user.id)
-    .eq('is_active', true)
-    .order('name')
+interface StudentWithProgress extends Student {
+  checkpoints: SkillCheckpoint[]
+}
 
-  const ids = (students ?? []).map(s => s.id)
+export default function InstructorDashboard() {
+  const [students, setStudents] = useState<StudentWithProgress[]>([])
+  const [loading, setLoading] = useState(true)
 
-  const { data: allLogsRaw } = ids.length > 0
-    ? await supabase
-        .from('session_logs')
+  useEffect(() => {
+    async function load() {
+      const supabase = createClient()
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+
+      const { data: myStudents } = await supabase
+        .from('students')
         .select('*')
-        .in('student_id', ids)
-        .order('session_date', { ascending: false })
-    : { data: [] }
+        .eq('instructor_id', user.id)
+        .eq('is_active', true)
+        .order('name')
 
-  const allLogs = allLogsRaw ?? []
+      if (!myStudents) { setLoading(false); return }
 
-  const seen = new Set<string>()
-  const latestPerStudent = allLogs.filter(l => {
-    if (!l.stroke) return false
-    if (seen.has(l.student_id)) return false
-    seen.add(l.student_id)
-    return true
-  })
+      const cpResults = await Promise.all(
+        myStudents.map(s =>
+          supabase.from('skill_checkpoints').select('*').eq('student_id', s.id)
+        )
+      )
 
-  const studentsWithStroke = (students ?? []).map(s => {
-    const latest = latestPerStudent.find(l => l.student_id === s.id)
-    return { ...s, currentStroke: latest?.stroke ?? null, currentStage: latest?.stage ?? null }
-  })
-
-  const strokeLogs = allLogs.filter(l => l.stroke)
-
-  const studentProgress: StudentProgressItem[] = studentsWithStroke.map(s => {
-    const logs = allLogs.filter(l => l.student_id === s.id)
-    const totalAttended =
-      logs.filter(l => l.attendance !== '결석').length +
-      getPriorStrokeBonus(s.currentStroke, s.currentStage)
-    const stageCount = strokeLogs.filter(
-      l =>
-        l.student_id === s.id &&
-        l.stroke === s.currentStroke &&
-        l.stage === s.currentStage &&
-        l.attendance !== '결석'
-    ).length
-    const latestStatus = latestPerStudent.find(l => l.student_id === s.id)?.status ?? null
-    const currentIdx = s.currentStroke ? (STROKES as readonly string[]).indexOf(s.currentStroke) : -1
-    const completedStrokes = MASTER_STROKES.filter(ms => {
-      const msIdx = (STROKES as readonly string[]).indexOf(ms)
-      return currentIdx > 0 && msIdx < currentIdx
-    })
-    return {
-      id: s.id,
-      name: s.name,
-      stroke: s.currentStroke,
-      stage: s.currentStage,
-      status: latestStatus,
-      totalAttended,
-      stageCount,
-      completedStrokes,
+      setStudents(myStudents.map((s, i) => ({
+        ...s,
+        checkpoints: (cpResults[i].data ?? []) as SkillCheckpoint[],
+      })))
+      setLoading(false)
     }
-  })
+    load()
+  }, [])
 
-  const strokeGroups = (STROKES as readonly string[])
-    .map(stroke => ({
-      stroke,
-      count: studentsWithStroke.filter(s => s.currentStroke === stroke).length,
-    }))
-    .filter(g => g.count > 0)
-
-  const noStrokeCount = studentsWithStroke.filter(s => !s.currentStroke).length
+  if (loading) return (
+    <div className="space-y-3">
+      {[...Array(4)].map((_, i) => <div key={i} className="h-20 bg-gray-200 rounded-xl animate-pulse" />)}
+    </div>
+  )
 
   return (
-    <div className="space-y-6">
-      {/* 총인원 */}
-      <div className="bg-white rounded-2xl p-4 shadow-sm">
-        <p className="text-sm text-gray-500 mb-0.5">내 담당반 총인원</p>
-        <p className="text-3xl font-bold text-sky-600">
-          {students?.length ?? 0}
-          <span className="text-base font-normal text-gray-400 ml-1">명</span>
-        </p>
-      </div>
+    <div>
+      <h2 className="text-lg font-bold text-gray-800 mb-4">내 학생 ({students.length}명)</h2>
 
-      {/* 진도별 인원 */}
-      <div>
-        <h3 className="text-sm font-bold text-gray-600 mb-3">진도별 인원</h3>
-        <div className="grid grid-cols-3 gap-2">
-          {strokeGroups.map(({ stroke, count }) => (
-            <div
-              key={stroke}
-              className="bg-white rounded-xl p-3 border border-gray-100 shadow-sm text-center"
-            >
-              <p className="text-xs text-gray-500 mb-1">{stroke}</p>
-              <p className="text-xl font-bold text-gray-800">
-                {count}
-                <span className="text-xs font-normal text-gray-400 ml-0.5">명</span>
-              </p>
-            </div>
-          ))}
-          {noStrokeCount > 0 && (
-            <div className="bg-gray-50 rounded-xl p-3 border border-gray-100 text-center">
-              <p className="text-xs text-gray-400 mb-1">미기록</p>
-              <p className="text-xl font-bold text-gray-400">
-                {noStrokeCount}
-                <span className="text-xs font-normal ml-0.5">명</span>
-              </p>
-            </div>
-          )}
+      {students.length === 0 ? (
+        <div className="text-center py-16 text-gray-400">
+          <p className="text-sm">담당 학생이 없습니다</p>
+          <p className="text-xs mt-1">반 관리에서 학생을 배정하세요</p>
         </div>
-      </div>
+      ) : (
+        <div className="space-y-3">
+          {students.map(s => {
+            const passedKeys = s.checkpoints.map(c => c.skill_key)
+            const progress = getProgressBySection(passedKeys)
+            const currentStep = getCurrentStep(passedKeys)
 
-      {/* 학생 진도 현황 */}
-      <div>
-        <h3 className="text-sm font-bold text-gray-600 mb-3">
-          학생 진도 현황
-          <span className="ml-2 text-gray-400 font-normal">({studentProgress.length}명)</span>
-        </h3>
-        <StudentProgressList students={studentProgress} basePath="/instructor/student" />
-      </div>
+            return (
+              <Link
+                key={s.id}
+                href={`/instructor/student/${s.id}`}
+                className="block bg-white rounded-xl border border-gray-100 shadow-sm px-4 py-3"
+              >
+                <div className="flex items-center justify-between mb-2">
+                  <div>
+                    <p className="font-semibold text-gray-800">{s.name}</p>
+                    <p className="text-xs text-gray-400">
+                      {s.grade && `${s.grade} · `}
+                      {currentStep ? currentStep.label : '전 과정 완료'}
+                    </p>
+                  </div>
+                  <span className="text-xs text-gray-400 font-mono">
+                    {passedKeys.length}/{ALL_STEPS.length}
+                  </span>
+                </div>
+                <div className="flex gap-1">
+                  {CURRICULUM.map(sec => {
+                    const p = progress[sec.key]
+                    return (
+                      <div key={sec.key} className="flex-1">
+                        <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                          <div
+                            className="h-full rounded-full transition-all"
+                            style={{ width: `${p.percent}%`, backgroundColor: sec.color }}
+                          />
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </Link>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }
