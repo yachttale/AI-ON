@@ -419,6 +419,7 @@ export interface Measurement {
 }
 export interface SkillProgress {
   id: string; student_id: string; skill_step_id: string; status: 'passed'
+  source: 'observed' | 'baseline'
   difficulty: Difficulty | null; passed_at: string; source_session_id: string | null
   instructor_id: string | null; step_key_snapshot: string; ladder_order_snapshot: number
   note: string | null; created_at: string
