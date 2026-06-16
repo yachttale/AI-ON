@@ -1,262 +1,222 @@
 # 수영 교육 데이터 플랫폼 — 데이터 토대 설계 (v2)
 
-- **작성일**: 2026-06-16
-- **상태**: 설계 확정 대기 (브레인스토밍 산출물)
+- **작성일**: 2026-06-16 (rev. 브레인스토밍 반영)
+- **상태**: 설계 확정 — 구현 계획 단계로 이행
 - **범위**: 데이터 모델 + 일일 수집 방식 (= 모든 상위 기능의 토대). 부모 리포트·예측·운영분석 등은 이 위에 얹는 후속 단계.
 
 ---
 
 ## 1. 배경 & 목표
 
-어린이 수영장 10년 운영. 현재 강사들이 매일 진도를 기록하지만 **단순 기록 수준**에 머물러 있고, 데이터를 부모 피드백·교육 표준화·예측으로 활용하지 못함.
+어린이 수영장 10년 운영. 현재 매일 진도를 기록하지만 **단순 기록 수준**에 머물러, 부모 피드백·교육 표준화·예측으로 활용 못 함. 만들 것은 단순 진도관리가 아니라 **"수영 교육 데이터 플랫폼"**.
 
-만들고자 하는 것은 단순 진도관리가 아니라 **"수영 교육 데이터 플랫폼"**. 궁극 목표 5가지:
+궁극 목표 5가지: ① 부모 피드백 자동화 ② 교육 표준화(영법=계단) ③ 성장 예측("초2·주2회면 자유형 첫 완주까지 몇 개월") ④ 강사별 성과 분석 ⑤ 운영 분석.
 
-1. **부모 피드백 자동화** — 매월 AI가 성장 리포트 작성 (영역별 성장, 정체, 완성 예상 시기, 다음 과제)
-2. **교육 표준화** — 강사마다 다른 기준을 통일. 영법을 세부 단계(약 100단계)로 정의. "영법 = 계단, 아이 = 계단을 오르는 사람"
-3. **예측 시스템** — "초2·주2회면 자유형 완성까지 평균 몇 개월" 같은 질문에 데이터로 답
-4. **강사별 교육 성과 분석**
-5. **수영장 전체 운영 분석**
-
-**핵심 질문**: 위 5가지가 가능하려면 *처음부터 어떤 데이터를 어떻게 매일 수집*해야 하는가.
+**핵심 질문**: 처음부터 *어떤 데이터를 어떻게 매일 수집*해야 위 5가지가 가능한가.
 
 ---
 
 ## 2. 현재 시스템 진단
 
-현재 repo(AI-ON)의 스키마/코드 분석 결과:
+**자산(재활용)**: 계단 모델이 이미 존재(`lib/curriculum.ts`, 영법별 order 1~69). 작동하는 인프라(Supabase auth/RLS, 역할 라우팅, Vercel 배포). UI 컴포넌트(StrokeRadar 등).
 
-**자산 (재활용)**
-- "계단" 모델이 이미 존재: `lib/curriculum.ts`에 영법별 사다리(초보→자유형→배영→평영→접영→마스터, 전역 order 1~69).
-- 작동하는 인프라: Supabase auth, RLS, 역할 라우팅(director/instructor), Vercel 배포.
-- UI 컴포넌트: StrokeRadar(7축 레이더), StageBoard, SessionForm 등.
-
-**문제 (이대로면 예측·표준화 불가)**
-1. **커리큘럼이 코드에 하드코딩** — `skill_key`가 TS 상수를 가리키는 문자열. 단계 추가/재정렬 시 과거 기록이 깨지고, "2학년 24단계 통과율" 같은 분석 쿼리 불가.
-2. **`session_logs`가 출결만 기록** (코드 주석: `출결만 - 단순화`) — 오늘 무엇을 연습했는지 신호 없음. = 원장이 우려한 "오늘 자유형 했다 정도로는 활용 불가" 지점.
-3. **예측 변수 누락** — 생년월일·나이, 성별, 수영 시작일, 주당 횟수(구조화)가 없거나 free text.
+**문제**: ① 커리큘럼이 코드에 하드코딩 → 분석·버전관리 불가 ② `session_logs`가 출결만 → 무엇을 했는지 신호 없음 ③ 예측 변수(생년월일·성별·입문일) 누락.
 
 ---
 
 ## 3. 설계 원칙
 
-1. **원시 이벤트를 타임스탬프로 영구 저장.** 집계값만 저장하거나 상태를 덮어쓰지 않는다. (나중에 ML이 가능한 유일한 형태)
-2. **커리큘럼을 DB로.** 코드 하드코딩 탈출 + 버전 관리.
-3. **모든 수업이 "무엇을 연습했는지"와 연결.** 출결 단독 기록 폐기.
+1. **원시 이벤트를 타임스탬프로 영구 저장.** 집계값만 저장하거나 상태 덮어쓰기 금지. (나중에 ML 가능한 유일한 형태)
+2. **커리큘럼을 DB로.** 코드 탈출 + 버전 관리.
+3. **수업 > 기록.** 강사가 매 수업 *상세 평가*를 하면 기록이 수업을 잡아먹음. 데일리는 *한 숫자(바퀴수)*만, 정밀 측정은 *지정 체크포인트*에서만.
 
 ---
 
 ## 4. 구축 방식 결정
 
-**결정: 기존 repo(AI-ON)를 진화시키되, 데이터 레이어는 새 스키마로 재구축.**
+**기존 repo(AI-ON) 진화 + 데이터 레이어 신규 구축.** "엉망"인 건 데이터 모델뿐. 로그인·RLS·라우팅·배포는 작동하므로 재사용. StrokeRadar는 트랙 구조에 매핑, 기존 69단계는 커리큘럼 버전 1의 씨앗.
 
-근거:
-- "엉망"인 것은 데이터 모델이지 앱 전체가 아님. 갈아엎을 대상은 데이터 레이어 하나.
-- 로그인·RLS·역할 라우팅·배포는 이미 작동 — 새 repo로 가면 이 인프라를 재구축하는 비용만 발생하고 비전에 이득 없음.
-- StrokeRadar는 새 트랙 구조에 그대로 매핑. 기존 69단계는 새 커리큘럼 **버전 1의 씨앗**으로 재활용.
-
-**DB 호스팅**: Supabase 유지 (auth·RLS 투자 보존). 무료 3번째 프로젝트 제한은 **기존 프로젝트 내 v2 전용 스키마 분리**로 회피, 비용 0. v1 운영과 v2 공존. *(최종 호스팅 확정은 후속 결정 — 모델은 어느 Postgres든 이식 가능)*
+**DB**: Supabase 유지. 무료 3번째 프로젝트 제한은 **기존 프로젝트 내 v2 전용 스키마 분리**로 회피(비용 0). 모델은 어느 Postgres든 이식 가능.
 
 ---
 
 ## 5. 데이터 모델 (ERD)
 
 ```
-[커리큘럼 — 표준화의 기준]
+[커리큘럼 — 표준화 기준]
 curriculum_versions ──< skill_steps >── skill_tracks ──> strokes
-                          (100단계)      (킥/팔/호흡/콤비)  (자유형…)
+                          (사다리)       (킥/팔/호흡/콤비)  (자유형…)
 
-[학생 — 예측 변수 포함]
+[학생 — 예측 변수]
 students (birthdate, sex, enrolled_on)
    │
-   ├──< sessions >──< session_skills >── skill_steps      ← 일일 모멘텀(하이브리드)
-   │      (출결)        (오늘 연습+숙련도)
+   ├──< sessions ───────────────────< measurements      ← 객관 지표
+   │      │  (출결+템플릿+지금영법)       (바퀴수/거리/시간/스트로크)
+   │      └─ template_id, focus_stroke_id
    │
-   ├──< skill_progress >── skill_steps                     ← 마일스톤 통과 이벤트(사다리)
-   │      (통과일+난이도+어느 수업)
+   ├──< skill_progress >── skill_steps                    ← 단계 통과 + 첫 완주 이벤트
    │
-   └──< distance_logs                                      ← 마스터반 거리
+   └──< media (영상+피드백)
+                                       ↘ measurements 도 skill_step_id로 연결(완주 측정)
 
-profiles(강사) ──< sessions, session_skills, skill_progress
-parent_reports (Phase 2) ──> students
+[강사 입력 편의]
+profiles(강사) ──< lesson_templates ──< lesson_template_items
+profiles(강사) ──< sessions, skill_progress, measurements, media
 ```
 
 ### 5.1 커리큘럼 (표준화)
 
-**`curriculum_versions`** — 100단계 체계의 버전
-| 컬럼 | 타입 | 비고 |
-|------|------|------|
-| id | uuid PK | |
-| label | text | 예: "v1 - 2026 기본" |
-| status | text | draft / active / archived |
-| created_at, activated_at, archived_at | timestamptz | |
+- **`curriculum_versions`** — id · label · status(draft/active/archived) · created_at, activated_at, archived_at
+- **`strokes`** — id · key(freestyle/backstroke/breaststroke/butterfly/beginner) · label · display_order · color
+- **`skill_tracks`** — id · stroke_id FK · key(kick/arm/breath/combo) · label · display_order · unique(stroke_id,key)
+- **`skill_steps`** — 사다리 (핵심)
 
-**`strokes`** — 영법
-| id uuid PK · key text unique (freestyle/backstroke/breaststroke/butterfly/beginner/master) · label · display_order int · color text |
+| 컬럼 | 비고 |
+|------|------|
+| id (uuid PK) | 학생 기록이 가리키는 **불변 ID** |
+| curriculum_version_id, stroke_id, track_id(null) | |
+| key (text) | 안정적 의미 키. unique(version_id, key) |
+| label, ladder_order(int) | 표시명 / 영법 내 위치 |
+| is_first_completion (bool) | **각 영법 첫 완주 지점** (측정·예측 타깃) |
+| measure_spec (text[] null) | 이 단계에서 측정할 항목: time/strokes/distance. 초보 단계는 빈 값 |
+| is_active (bool) | 기본 true. **삭제 대신 false** |
 
-**`skill_tracks`** — 영법 내 영역(레이더 축)
-| id uuid PK · stroke_id FK · key text (kick/arm/breath/combo…) · label · display_order int · unique(stroke_id, key) |
+### 5.2 학생 (예측 변수)
 
-**`skill_steps`** — **100단계 사다리** (핵심)
-| 컬럼 | 타입 | 비고 |
-|------|------|------|
-| id | uuid PK | 학생 기록이 가리키는 **불변 ID** |
-| curriculum_version_id | FK | |
-| stroke_id | FK | |
-| track_id | FK null | 트랙 태그(킥/팔/호흡/콤비) |
-| key | text | 안정적 의미 키. 예: `freestyle.combo.25m`. unique(version_id, key) |
-| label | text | 화면 표시명 |
-| ladder_order | int | 영법 내 사다리 위치 |
-| is_milestone | bool | 마일스톤(통과 이벤트 대상) vs 미시 단계 |
-| is_completion | bool | 영법 완성 지점 (예측 타깃) |
-| is_active | bool | 기본 true. **삭제 대신 false 처리** |
-| created_at | timestamptz | |
+**`students`** — id · name · **birthdate(date, 나이·학년 파생)** · **sex(null, 남/여)** · **enrolled_on(date, 입문일)** · instructor_id FK · is_active · withdrawal_* (기존) · schedule(표시용) · created_at
 
-### 5.2 학생 (예측 변수 포함)
+### 5.3 수업 (데일리 — 가볍게)
 
-**`students`**
-| 컬럼 | 타입 | 비고 |
-|------|------|------|
-| id | uuid PK | |
-| name | text | |
-| birthdate | date | **나이·학년 파생용** (학년 텍스트보다 정확) |
-| sex | text null | '남'/'여' — 남녀 차이 분석 |
-| enrolled_on | date | **수영 시작일(입문 시기)** — created_at과 구분 |
-| instructor_id | FK | |
-| is_active | bool | |
-| withdrawal_status, withdrawal_requested_by, withdrawal_note | | 기존 퇴원 워크플로우 유지 |
-| schedule | text | 표시용 유지 (주당 횟수는 출석에서 파생) |
-| created_at | timestamptz | |
+**`sessions`** — 수업 1회
 
-### 5.3 수업 & 일일 연습 (하이브리드)
+| 컬럼 | 비고 |
+|------|------|
+| id, session_date, student_id FK, instructor_id FK | |
+| attendance (출석/지각/결석), absence_reason(null) | |
+| template_id FK(null) | 오늘 쓴 기본패턴 |
+| focus_stroke_id FK(null) | 오늘의 "지금영법" |
+| memo(null), created_at | |
+| | **unique(student_id, session_date)** |
 
-**`sessions`** — 수업 1회(출결)
-| id uuid PK · session_date date · student_id FK · instructor_id FK · attendance text(출석/지각/결석) · absence_reason text null · memo text null · created_at · **unique(student_id, session_date)** |
+> 데일리 정밀 스킬평가 테이블(session_skills)은 **두지 않음** — 수업을 잡아먹으므로. 데일리 신호는 아래 `measurements`의 바퀴수 한 줄.
 
-**`session_skills`** — **일일 모멘텀 신호** (신규)
-| 컬럼 | 타입 | 비고 |
-|------|------|------|
-| id | uuid PK | |
-| session_id | FK (on delete cascade) | |
-| skill_step_id | FK | 오늘 연습한 단계 |
-| quality | text null | 5단계: 어려워함/조금어려워함/중간/조금쉽게/쉽게해결 |
-| is_focus | bool | 오늘의 주력 단계 |
-| note | text null | |
-| created_at | timestamptz | |
+### 5.4 객관 지표 (통합)
 
-→ 한 수업에 여러 행 가능(2~3단계 연습). 단계 내 진전·정체 감지·리포트 디테일의 원천.
+**`measurements`** — 모든 객관 수치를 한 테이블로 (append-only)
 
-### 5.4 마일스톤 (단계 통과 이벤트)
+| 컬럼 | 비고 |
+|------|------|
+| id (uuid PK) | |
+| student_id FK | |
+| metric_type (text) | laps / distance_m / time_sec / stroke_count |
+| value (numeric), unit (text) | |
+| measured_on (date) | |
+| session_id FK(null) | 데일리 측정(바퀴수)의 출처 |
+| skill_step_id FK(null) | 체크포인트 측정(완주 시간·스트로크)의 대상 영법 단계 |
+| instructor_id FK(null), note(null), created_at | |
 
-**`skill_progress`** — 사다리의 뼈대 (현 skill_checkpoints 진화)
-| 컬럼 | 타입 | 비고 |
-|------|------|------|
-| id | uuid PK | |
-| student_id | FK (on delete cascade) | |
-| skill_step_id | FK | |
-| status | text | 기본 passed (향후 in_progress 확장 여지) |
-| difficulty | text null | 통과 시 난이도 |
-| passed_at | date | |
-| source_session_id | FK null | 어느 수업에서 통과 |
-| instructor_id | FK null | |
-| step_key_snapshot | text | **통과 시점의 key 스냅샷** (버전 안정성) |
-| ladder_order_snapshot | int | **통과 시점의 위치 스냅샷** (과거 속도 불변) |
-| note | text null | |
-| created_at | timestamptz | |
-| | | **unique(student_id, skill_step_id)** |
+- **데일리**: `metric_type=laps` 한 줄 (1바퀴=50m → distance_m 파생). 워밍업+지금영법 바퀴 합산 가능.
+- **체크포인트**: 각 영법 첫 완주 시 `time_sec`·`stroke_count` 저장. **새 영법 첫 완주 시 이전 영법들 재측정**(같은 metric, 새 measured_on) → 영법별 성장 곡선.
+- (기존 swim_distances를 흡수.)
 
-### 5.5 기타
+### 5.5 단계 진행 (사다리 이벤트)
 
-**`distance_logs`** (마스터반) — id · student_id FK · instructor_id FK · logged_date date · distance_meters int · note · created_at
+**`skill_progress`** — id · student_id FK(cascade) · skill_step_id FK · status(passed) · difficulty(null) · passed_at(date) · source_session_id FK(null) · instructor_id FK(null) · **step_key_snapshot, ladder_order_snapshot**(버전 안정성) · note · created_at · **unique(student_id, skill_step_id)**
 
-**`parent_reports`** (Phase 2 예약) — id · student_id FK · period_start/end date · generated_at · content jsonb · status (draft/approved/sent) · approved_by FK · created_at
+### 5.6 영상 + 피드백
 
-**`curriculum_step_map`** (대규모 개편 시에만) — id · from_step_id FK · to_step_id FK · relation (same/merged/split) · note. 버전 간 비교용.
+**`media`** — id · student_id FK · captured_on(date) · storage_path(Supabase Storage) · type(video) · skill_step_id FK(null) · **feedback_draft(text, 데이터 자동생성)** · **feedback_final(text, 강사 특이사항 추가)** · sent_to_parent_at(null) · created_at
+
+### 5.7 수업 템플릿 (입력 편의 + 표준화)
+
+- **`lesson_templates`** — id · instructor_id FK · name(예: "기본패턴 A") · is_active · is_studio_standard(bool, 원장 승격) · created_at
+- **`lesson_template_items`** — id · template_id FK · seq(int) · stroke_id FK(null) · label(예: "자유형 발차기") · default_laps(int)
+
+### 5.8 후속 예약
+
+- **`parent_reports`** (Phase 2) — id · student_id · period · generated_at · content(jsonb) · status(draft/approved/sent) · approved_by
+- **`curriculum_step_map`** (대규모 개편 시) — from_step_id · to_step_id · relation(same/merged/split)
 
 ---
 
 ## 6. 핵심 메커니즘
 
-### 6.1 하이브리드 일일 수집
-- 매 수업: `session`(출결) + `session_skills`(오늘 연습 단계 + 숙련도). → 단계 내 진전·정체 포착.
-- 단계 통과 시: `skill_progress` 이벤트 1건. → 사다리 전진(예측·표준화).
+### 6.1 수집 모델 (수업 > 기록)
+| 무엇 | 언제 | 부담 |
+|------|------|------|
+| 출결 | 매 수업 | 탭 |
+| 기본패턴 선택 | 매 수업 | 1탭 (템플릿) |
+| 바퀴수(거리) | 매 수업 | 한 숫자 |
+| 단계 통과 | 통과 순간(이벤트) | 탭 1번 |
+| 첫 완주 시간·스트로크 | 각 영법 첫 완주 시 | 측정 입력 |
+| 이전 영법 재측정 | 새 영법 첫 완주 시 + 월 1회 영상일 | 측정 입력 |
+| 영상 + 피드백 | 월 1회(기존) | 피드백 초안 검토만 |
 
-### 6.2 사다리 + 트랙
-- `skill_steps`의 `ladder_order` = 하나의 진행 사다리(계단). `track_id` = 영역(킥/팔/호흡/콤비).
-- 하나의 진행 숫자도 나오고, 트랙별로 쪼개 레이더·"다음 달 집중 과제: 호흡" 리포트도 가능.
+### 6.2 50분 3등분 입력
+1단계 **기본패턴**(템플릿 선택) → 2단계 **지금영법**(사다리 위치 자동, 통과 시 탭) → 3단계 **바퀴수**(거리). 합 ≈ 3탭.
 
-### 6.3 커리큘럼 버전 관리 & 단계 편집 안정성
+### 6.3 사다리 + 트랙
+`skill_steps.ladder_order`=계단, `track_id`=영역(킥/팔/호흡/콤비). 하나의 진행 숫자 + 트랙별 레이더·"다음 달 집중: 호흡" 리포트.
 
-**원장이 나중에 100단계를 자유롭게 다시 정의해도 기존 데이터는 깨지지 않는다.** 보장 규칙:
-
-1. 학생 기록은 단계의 **불변 ID**를 참조 (순서·이름이 아님).
-2. 단계는 **삭제하지 않고 보관**(`is_active=false`) → FK 연결 유지.
-3. 통과 시점의 key·위치를 **스냅샷**으로 저장 → 과거 평가 기준 항상 복원, 과거 속도 불변.
-
-| 나중 작업 | 결과 |
-|-----------|------|
-| 단계 추가 / 이름 변경 / 순서 변경 | ✅ 안전 |
-| 단계 삭제 | ✅ 보관 처리 (과거 기록 유지, 신규에겐 숨김) |
-| 단계 분할/병합 (대규모 개편) | ✅ 안전. 단 버전 간 비교 시 `curriculum_step_map` 필요 (측정 자를 바꾸는 본질적 비용) |
-
-**운영 권장**: 출시 전 100단계를 완벽히 짜려 하지 말 것. 현 69단계 확장 초안을 **버전 1**로 띄우고 데이터 수집 시작 → 사용하며 버전 2,3으로 보강. 구조가 변화를 흡수.
-**관리자 화면**: 원장이 개발자 없이 단계 추가/수정/순서변경 (삭제는 자동 보관). 로드맵 포함.
+### 6.4 커리큘럼 편집 안정성
+원장이 100단계를 나중에 자유롭게 재정의해도 안 깨짐: ① 기록은 단계 **불변 ID** 참조 ② 삭제 대신 **보관** ③ 통과 시점 **스냅샷** 저장. 추가/이름변경/순서변경=안전, 삭제=보관, 분할/병합=`curriculum_step_map`. **출시 전 100단계 완벽화 금지** — 현 69단계 확장 초안을 버전1로 시작, 사용하며 보강. 원장용 **관리자 편집 화면** 제공(삭제는 자동 보관).
 
 ---
 
 ## 7. 성장 속도 측정 & 예측
 
-- **거시 속도** = `skill_progress`에서 활동 월당 통과 단계 수 (전체 + 트랙별). → "이번 달 자유형 12→18단계".
-- **미시 모멘텀** = `session_skills` 숙련도 추세. → 한 단계 정체 중에도 개선 포착 + **정체 감지**.
-- **예측** = `enrolled_on`부터 `is_completion` 마일스톤까지 기간을 나이·성별·실제 주당횟수·학년·선행영법별 코호트 집계. 데이터 축적 시 **"초2·주2회 → 평균 N개월"** 자동 산출.
-- **주당 횟수** = 별도 입력 없이 **실제 출석 이벤트에서 계산** (계획이 아닌 진실).
+- **데일리 거리**: 바퀴수 누적 = 훈련량·지구력 곡선 (완주 사이 공백을 메움). 초보는 0 → 단계 게이팅 자동.
+- **완주 시간 곡선**: 각 영법 첫 완주 + 이후 재측정 → 영법별 시간 단축 추세.
+- **예측 타깃**: `enrolled_on` → 각 영법 첫 완주(`is_first_completion`)까지 기간. 나이·성별·실제 주당횟수·학년·선행영법별 코호트 집계 → "초2·주2회 → 자유형 첫 완주 평균 N개월".
+- **정체 감지**: 체크포인트 도달 *시점 간격*을 코호트 평균과 비교 → "이 아이 B단계까지 평소 2개월인데 4개월째".
+- **주당 횟수**: 별도 입력 없이 출석 이벤트에서 계산.
 
 ---
 
 ## 8. 강사 입력 UX & 데이터 품질
 
-- 오늘 연습 단계를 학생의 **현재 사다리 위치로 자동 프리필** → 평소 탭 1번.
-- 숙련도 5단계 탭 + "통과!" 토글 → **총 3~4탭**.
-- **단계 건너뛰기 방지**(N+1 미통과 시 N+2 통과 차단, 트랙별 설정) → 데이터 정합성.
+- 지금영법은 학생 **사다리 위치 자동 프리필**, 기본패턴은 **템플릿 1탭** → 평소 ≈ 3탭.
+- 템플릿 기본 바퀴수는 기본값, **실제값 조정 가능**. 템플릿은 **선택(건너뛰기 가능)** — 보강·테스트일에 안 막힘.
+- 단계 건너뛰기 방지(트랙별 설정) → 정합성.
 
 ---
 
-## 9. 부모 리포트 (Phase 2)
+## 9. 부모 리포트 & 피드백 (Phase 2, 데이터 준비됨)
 
-위 데이터만으로 리포트 재료(영역별 성장·정체·완성 예측·다음 과제) **전부 확보**. 생성/승인/발송 워크플로우(`parent_reports`)는 토대 위 별도 단계로 분리.
+**피드백 = 데이터 기반 자동 초안 + 강사 특이사항만.** 강사 전담 시 편차가 커서 독이 되므로. 자동 초안 품질 = 모으는 객관 데이터(바퀴수·거리·완주 시간·단계)의 함수. `media.feedback_draft`(자동) → `feedback_final`(강사 보강) → 부모 전송. 위 데이터만으로 재료 전부 확보.
 
 ---
 
 ## 10. ML / 예측 대비
 
-모든 데이터가 (학생 + 타임스탬프 이벤트)로 join 가능 → 나중에 *(학생, 주차)별 1행 + 변수 + 획득 단계 수* 패널 데이터를 **스키마 변경 없이** 추출. 이것이 ML 준비의 핵심 속성. 전제: append-only 이벤트, 상태 덮어쓰기 금지.
+모든 데이터가 (학생 + 타임스탬프 이벤트)로 join 가능 → *(학생, 주차)별 1행 + 변수 + 거리·통과수* 패널을 **스키마 변경 없이** 추출. 전제: append-only, 상태 덮어쓰기 금지.
 
 ---
 
 ## 11. 범위 & 단계 분리
 
-5대 목표는 모두 **하나의 데이터 토대** 위에 얹힘. 따라서:
-
-- **Phase 1 (이 스펙)**: 데이터 토대 — 새 스키마, 커리큘럼 DB화 + 버전 관리, 하이브리드 입력 UX, 관리자 단계 편집.
-- **Phase 2~**: 부모 리포트 자동화 / 성장 예측 / 강사 성과 분석 / 운영 분석 — 각각 자체 스펙·계획·구현 사이클.
+- **Phase 1 (이 스펙)**: 데이터 토대 — 새 스키마, 커리큘럼 DB+버전, 템플릿 기반 3등분 입력, 바퀴수·완주 측정, 영상+피드백 저장, 관리자 단계 편집.
+- **Phase 2~**: 부모 리포트 자동화 / 성장 예측 / 강사 성과 / 운영 분석 — 각자 스펙·계획·구현 사이클.
 
 ---
 
-## 12. 로드맵 개요
+## 12. 로드맵 개요 (상세는 구현 계획에서)
 
-(상세 구현 계획은 writing-plans 단계에서 작성)
-
-1. 새 스키마 마이그레이션 + RLS (Supabase v2 스키마 분리)
-2. 커리큘럼 DB 시드 (현 69단계 → 버전 1) + 타입/데이터접근 레이어
-3. 강사 일일 입력 UX (프리필 + 3~4탭, session + session_skills + skill_progress)
-4. 관리자 커리큘럼 편집 화면 (추가/수정/순서/보관)
-5. 진도·속도 조회 화면 (사다리 + 트랙 레이더 재활용)
-6. (Phase 2) 부모 리포트 → 예측 → 운영분석
+1. 새 스키마 마이그레이션 + RLS (Supabase v2 스키마)
+2. 커리큘럼 DB 시드(현 69단계 → 버전1) + 타입/데이터접근 레이어
+3. 강사 일일 입력: 3등분(템플릿·지금영법·바퀴수) + 출결 + 단계 통과
+4. 수업 템플릿 CRUD (강사) + 원장 표준 승격
+5. 첫 완주 측정 + 재측정 흐름 (시간·스트로크)
+6. 관리자 커리큘럼 편집 화면 (추가/수정/순서/보관)
+7. 영상 업로드 + 피드백 초안/최종 (Storage)
+8. 진도·속도 조회 (사다리 + 트랙 레이더 재활용)
+9. (Phase 2) 리포트 → 예측 → 운영분석
 
 ---
 
 ## 13. 후속 결정 (미해결)
 
-- **DB 호스팅 최종 확정**: Supabase 동일 프로젝트 내 스키마 분리(권장) vs 별도 프로젝트(Pro 유료) vs Neon. 모델은 이식 가능하므로 구현 착수 전 확정.
-- **100단계 실제 내용**: 버전 1 초안을 현 69단계에서 어디까지 확장할지 — 출시 후 반복 정의 (구조가 흡수).
-- **레이더 축 정의**: 기존 7축(턴·스타트 포함)을 트랙 구조에 어떻게 정렬할지.
+- **주1회 학생 재측정 밀도**: 완주 텀이 길다. 데일리 바퀴수 + 월 1회 영상일 측정으로 보완 검토 중.
+- **DB 호스팅 최종**: Supabase 스키마 분리(권장) 확정 여부.
+- **100단계 실제 내용**: 버전1 초안 범위 — 출시 후 반복 정의.
+- **레이더 축 ↔ 트랙 정렬**: 기존 7축(턴·스타트 포함)을 트랙에 어떻게 매핑할지.
