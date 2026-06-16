@@ -23,7 +23,7 @@ export default function TodayPage() {
   async function load() {
     const supabase = createClient()
     const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
+    if (!user) { setLoading(false); return }
 
     const [{ data: allStudents }, { data: todayLogs }] = await Promise.all([
       supabase.from('students').select('*').eq('instructor_id', user.id).eq('is_active', true).order('name'),

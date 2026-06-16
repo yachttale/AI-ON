@@ -18,7 +18,7 @@ export default function InstructorDashboard() {
     async function load() {
       const supabase = createClient()
       const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
+      if (!user) { setLoading(false); return }
 
       const { data: myStudents } = await supabase
         .from('students')
