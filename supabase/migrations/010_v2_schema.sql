@@ -68,6 +68,8 @@ create table public.students (
   enrolled_on date,
   grade text,
   schedule text,
+  phone text,  -- 보호자 연락처(영상 전송용) — 재원생 명단에서 백필
+
   instructor_id uuid references public.profiles(id),
   is_active boolean not null default true,
   withdrawal_status text check (withdrawal_status in ('pending','approved')),

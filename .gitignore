@@ -45,3 +45,5 @@ next-env.d.ts
 
 # 학생 개인정보 (PII) — 절대 커밋 금지 (아동 정보)
 *.xlsx
+# xlsx에서 생성되는 학생 시드 SQL(실명·연락처 포함) — 로컬 전용
+/supabase/seed-local/
