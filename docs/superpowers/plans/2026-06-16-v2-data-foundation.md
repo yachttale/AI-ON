@@ -13,7 +13,9 @@
 - **SQL(스키마·RLS·시드)** → 작성 → SQL Editor 적용 → 검증 쿼리로 확인.
 - **데이터 접근 함수** → 타입체크/빌드 + 실사용 검증 (통합 테스트 하네스는 YAGNI, 만들지 않음).
 
-**선행 결정 (실행 전 1회 확인):** v2 테이블이 들어갈 DB 타깃 — (A) v2 전용 신규 Supabase 프로젝트의 `public`(권장, 충돌 없음) vs (B) 기존 프로젝트 내 별도 스키마. 테이블 DDL은 동일하며 타깃만 다르다. 본 계획은 (A) 신규 `public` 가정으로 작성. 기존 `001_schema.sql`/`002_rpc.sql`(이 repo의 v1)은 v2 타깃 DB에서 실행하지 않는다.
+**DB 타깃 (결정됨):** 기존 진도관리 Supabase 프로젝트를 v2로 **재활용**. 그 프로젝트엔 테스트 1주일치(폐기 가능) 데이터뿐이고 그전 history는 없음(기억+영상만) → 마이그레이션 불필요. 기존 v1 테이블(`001_schema.sql`/`002_rpc.sql` 산출물)을 **drop** 후 v2를 `public`에 새로 생성(무료 유지, 충돌·스키마분리 friction 없음). drop은 SQL Editor 적용 시점에 수행.
+
+**기존생 온보딩:** 출시 시 재원생 100%가 중도합류(과거 데이터 없음). 마이그레이션 대신 **베이스라인 배치** — 강사가 현재 사다리 위치를 1회 입력하고 `skill_progress.source='baseline'`로 표시. `source='baseline'`이 제외하는 건 **"첫 학습 시점" 속도 계산 단 하나뿐**(날짜 미신뢰). 그 외 향후 데이터(일일 바퀴수, 완성 영법 **재측정**, 현재 영법 첫 완주, 상위 마일스톤)는 기존생에게도 1급 `observed` 데이터 — 베이스라인일 측정값(오늘 날짜)은 개선 곡선의 출발점. 베이스라인 입력 UI는 Plan 2; 본 계획은 스키마(`source` 컬럼)만 준비.
 
 ---
 
@@ -175,6 +177,7 @@ create table public.skill_progress (
   student_id uuid not null references public.students(id) on delete cascade,
   skill_step_id uuid not null references public.skill_steps(id),
   status text not null default 'passed' check (status in ('passed')),
+  source text not null default 'observed' check (source in ('observed','baseline')),  -- baseline=기존생 현재위치(날짜 미신뢰)
   difficulty text check (difficulty in ('어려워함','조금어려워함','중간','조금쉽게','쉽게해결')),
   passed_at date not null default current_date,
   source_session_id uuid references public.sessions(id) on delete set null,

@@ -121,7 +121,7 @@ profiles(강사) ──< sessions, skill_progress, measurements, media
 
 ### 5.5 단계 진행 (사다리 이벤트)
 
-**`skill_progress`** — id · student_id FK(cascade) · skill_step_id FK · status(passed) · difficulty(null) · passed_at(date) · source_session_id FK(null) · instructor_id FK(null) · **step_key_snapshot, ladder_order_snapshot**(버전 안정성) · note · created_at · **unique(student_id, skill_step_id)**
+**`skill_progress`** — id · student_id FK(cascade) · skill_step_id FK · status(passed) · **source(observed/baseline)** · difficulty(null) · passed_at(date) · source_session_id FK(null) · instructor_id FK(null) · **step_key_snapshot, ladder_order_snapshot**(버전 안정성) · note · created_at · **unique(student_id, skill_step_id)**
 
 ### 5.6 영상 + 피드백
 
@@ -198,6 +198,10 @@ profiles(강사) ──< sessions, skill_progress, measurements, media
 - **Phase 1 (이 스펙)**: 데이터 토대 — 새 스키마, 커리큘럼 DB+버전, 템플릿 기반 3등분 입력, 바퀴수·완주 측정, 영상+피드백 저장, 관리자 단계 편집.
 - **Phase 2~**: 부모 리포트 자동화 / 성장 예측 / 강사 성과 / 운영 분석 — 각자 스펙·계획·구현 사이클.
 
+**기존생 온보딩 & 향후 데이터의 의미 (cold-start):** 출시 시 재원생 100%가 중도합류(과거 데이터 없음 — 1주 테스트 + 그전 기억·영상뿐). 마이그레이션 불필요, 데이터 0년차로 새 출발.
+- **베이스라인**: 강사가 현재 사다리 위치를 1회 입력 → `skill_progress.source='baseline'`. 이 플래그가 제외하는 건 **"첫 학습 시점" 속도 계산 단 하나**(날짜 미신뢰).
+- **향후 데이터는 기존생에게도 100% 의미 있음 (핵심 요구사항)**: ① 현재 진행 영법의 첫 완주까지 실날짜 기록 ② 데일리 바퀴수=거리·지구력 곡선 ③ **이미 완성한 영법도 재측정**(베이스라인일 + 월 영상일)으로 시간·효율 개선 곡선 ④ 50m·100m·마스터 상위 마일스톤. → 베이스라인일 측정값(오늘 날짜)은 1급 `observed` 데이터이자 개선 곡선의 출발점. 기존생도 1개월차부터 의미 있는 리포트 가능.
+
 ---
 
 ## 12. 로드맵 개요 (상세는 구현 계획에서)
@@ -217,6 +221,6 @@ profiles(강사) ──< sessions, skill_progress, measurements, media
 ## 13. 후속 결정 (미해결)
 
 - **주1회 학생 재측정 밀도**: 완주 텀이 길다. 데일리 바퀴수 + 월 1회 영상일 측정으로 보완 검토 중.
-- **DB 호스팅 최종**: Supabase 스키마 분리(권장) 확정 여부.
+- ~~DB 호스팅~~ **결정됨**: 기존 진도관리 Supabase 프로젝트 재활용(1주 테스트 데이터 drop) → v2를 `public`에 신규. 무료 유지, 스키마분리 friction 없음.
 - **100단계 실제 내용**: 버전1 초안 범위 — 출시 후 반복 정의.
 - **레이더 축 ↔ 트랙 정렬**: 기존 7축(턴·스타트 포함)을 트랙에 어떻게 매핑할지.
