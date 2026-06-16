@@ -185,3 +185,10 @@ $$ language plpgsql security definer;
 create trigger on_auth_user_created
   after insert on auth.users
   for each row execute procedure public.handle_new_user();
+
+-- 테이블 권한 부여
+grant select, insert, update, delete on public.profiles to authenticated;
+grant select, insert, update, delete on public.students to authenticated;
+grant select, insert, update, delete on public.session_logs to authenticated;
+grant select, insert, update, delete on public.skill_checkpoints to authenticated;
+grant select, insert, update, delete on public.swim_distances to authenticated;
