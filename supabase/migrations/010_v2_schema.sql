@@ -51,6 +51,8 @@ create table public.skill_steps (
   ladder_order int not null,
   is_first_completion boolean not null default false,
   measure_spec text[] not null default '{}',  -- {'time_sec','stroke_count','distance_m'}
+  step_kind text not null default 'ladder' check (step_kind in ('ladder','counter','repeatable')),
+  -- ladder=통과형(1회 통과), counter=누적연습+완성버튼(턴/스타트/잠영25M), repeatable=반복기록(50m 바퀴·마스터 거리)
   is_active boolean not null default true,
   created_at timestamptz default now() not null,
   unique (curriculum_version_id, key)
