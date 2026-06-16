@@ -1,0 +1,22 @@
+{
+  "name": "스타키즈 수영 진도 관리",
+  "short_name": "스타키즈",
+  "description": "스타키즈 수영 진도 관리 시스템",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f0f9ff",
+  "theme_color": "#0ea5e9",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
