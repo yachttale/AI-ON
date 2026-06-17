@@ -4,7 +4,7 @@
 > **다른 컴퓨터에서 처음 시작**할 때는 아래 "다른 컴퓨터에서 처음 켤 때" 절차를 먼저 따르세요.
 
 ## 한 줄 요약 (2026-06-17 기준)
-데이터 토대(Plan 1) **+ 커리큘럼 시드 + cold-start 스크립트 완료**. Plan 2(강사 베이스라인+일일 입력) **설계 스펙·구현 플랜까지 완료·커밋·푸시**. **다음은 플랜대로 코딩 시작**(과제 1~10은 DB 없이 가능).
+데이터 토대(Plan 1) **+ 커리큘럼 시드 + cold-start 스크립트 완료**. Plan 2(강사 베이스라인+일일 입력) **과제 1~10 코딩 완료**(타입동기화·순수로직3·데이터/액션·화면3, 정적검증 tsc/eslint/24테스트 통과·커밋). **다음은 원장 SQL 마이그레이션 적용 + dev 스모크(과제 11 Step2~3, 실 DB·.env.local 필요)**.
 
 ## 브랜치 / 원격
 `feat/v2-data-platform` · origin = github.com/yachttale/AI-ON (푸시됨)
@@ -45,15 +45,20 @@
 - 매핑: 이름→name, 입학일→enrolled_on, 수업시간→schedule, 휴대전화→phone, is_active=true
 - ⚠️ 명단에 **기능(skill) 수준 데이터 없음** → 기능 베이스라인은 강사가 첫 관찰로 입력(Plan 2).
 
-**Plan 2 — 강사 베이스라인+일일 입력 (설계+플랜 완료, 구현 전)**
+**Plan 2 — 강사 베이스라인+일일 입력 (과제 1~10 코딩 완료 ✅, 11 Step2~3만 남음)**
 - 스펙: `docs/superpowers/specs/2026-06-17-v2-instructor-input-design.md` (원장 승인됨)
-- 구현 플랜: `docs/superpowers/plans/2026-06-17-v2-instructor-input.md` ← **다음 세션 시작점**
+- 구현 플랜: `docs/superpowers/plans/2026-06-17-v2-instructor-input.md`
+- 생성/수정 파일:
+  - 타입/스키마: `types/v2.ts`(StepKind·attempt), `supabase/migrations/010_v2_schema.sql`(measurements 'attempt'), `lib/v2/curriculum-v1-sheet.ts`(StepKind re-export)
+  - 순수 로직(+테스트): `lib/v2/{baseline,ladder,today}.ts`, `__tests__/v2/{baseline,ladder,today}.test.ts` (8개 추가, 총 24 통과)
+  - 데이터/액션: `lib/v2/data.ts`(getTodayStudentsRaw·getStrokeLadders), `lib/v2/actions.ts`('use server' 7액션)
+  - 화면: `app/v2/layout.tsx`, `app/v2/today/{page,parts}.tsx`, `app/v2/student/[id]/{page,StepControl}.tsx`, `app/v2/student/[id]/baseline/{page,BaselineLadder}.tsx`
+- 정적검증 통과: `npx tsc --noEmit` · `npx eslint app/v2 lib/v2` · `npx vitest run __tests__/v2/`(24)
 
 ## 다음 할 일 (순서) ⏳
-1. **구현 플랜 실행** — 위 플랜의 11개 과제를 TDD로. 실행은 `subagent-driven-development`(추천) 또는 `executing-plans` 스킬. 과제 1~10(타입동기화→순수로직→데이터/액션→화면3)은 **DB 없이 지금 가능**.
-2. **마이그레이션 적용 (원장, SQL Editor)** — 1주 테스트 테이블 drop 후 `010`(‘attempt’ 추가 반영)→`011`→`012`→`seed-local/013`. 검증: `skill_steps`=144, `students`=163.
-3. **과제 11 실 DB 스모크** — `.env.local`+`npm run dev`로 `/v2/today`·진도·베이스라인 동작 확인.
-- (코딩 전 Next 16 규약은 플랜 상단 "Next 16 규약" 절에 정리됨 — async params, 'use server' 액션, revalidatePath.)
+1. **마이그레이션 적용 (원장, SQL Editor)** — 1주 테스트 테이블 drop 후 `010`(‘attempt’ 포함)→`011`→`012`→`seed-local/013`. 검증: `skill_steps`=144, `students`=163.
+2. **과제 11 실 DB 스모크** — `.env.local` 생성 후 `npm run dev`로 로그인→`/v2/today`(출결·바퀴)→학생 진도(통과·카운터·반복)→`/v2/student/[id]/baseline` 배치 저장→DB(`skill_progress`·`measurements`·`sessions`) 행 생성 확인.
+- (Next 16 규약은 플랜 상단 "Next 16 규약" 절 참고 — async params, 'use server' 액션, revalidatePath.)
 
 ## Plan 2 핵심 설계 (요약)
 - 아키텍처: **서버컴포넌트 + 클라이언트 섬 + 서버액션** (v1처럼 전부 client 금지).
