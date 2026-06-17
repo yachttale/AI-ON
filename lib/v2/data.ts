@@ -61,15 +61,22 @@ export async function recordMeasurement(m: Omit<Measurement, 'id' | 'created_at'
   if (error) throw error
 }
 
-// 오늘 수업: 강사 본인 활성 학생 + 당일 출결/바퀴수
-export async function getTodayStudentsRaw(instructorId: string): Promise<{ students: TodayStudent[]; sessionById: Map<string, TodaySession> }> {
+// 오늘 수업: 전체 활성 학생(담당 강사명 포함) + 당일 출결/바퀴수.
+// 내 반/가져오기 구분은 buildTodayCards가 currentUserId로 수행(요일별 다른 강사 지원).
+export async function getTodayStudentsRaw(): Promise<{ students: TodayStudent[]; sessionById: Map<string, TodaySession> }> {
   const supabase = await createClient()
   const today = new Date().toISOString().slice(0, 10)
-  const { data: students, error } = await supabase
-    .from('students').select('id,name,grade,schedule')
-    .eq('instructor_id', instructorId).eq('is_active', true).order('name')
+  const { data: rows, error } = await supabase
+    .from('students')
+    .select('id,name,grade,schedule,instructor_id,profiles!instructor_id(name)')
+    .eq('is_active', true).order('name')
   if (error) throw error
-  const ids = (students ?? []).map(s => s.id)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const students: TodayStudent[] = (rows ?? []).map((r: any) => ({
+    id: r.id, name: r.name, grade: r.grade, schedule: r.schedule,
+    instructor_id: r.instructor_id, instructor_name: r.profiles?.name ?? null,
+  }))
+  const ids = students.map(s => s.id)
   const sessionById = new Map<string, TodaySession>()
   if (ids.length) {
     const { data: sessions } = await supabase
@@ -82,7 +89,7 @@ export async function getTodayStudentsRaw(instructorId: string): Promise<{ stude
     for (const s of sessions ?? []) sessionById.set(s.student_id, { attendance: s.attendance, laps: lapByStudent.get(s.student_id) ?? null })
     for (const [sid, v] of lapByStudent) if (!sessionById.has(sid)) sessionById.set(sid, { attendance: null, laps: v })
   }
-  return { students: (students ?? []) as TodayStudent[], sessionById }
+  return { students, sessionById }
 }
 
 // 학생 영법별 사다리 뷰(통과·source·연습횟수 반영)

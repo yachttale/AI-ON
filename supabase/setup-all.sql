@@ -1,10 +1,10 @@
 -- ============================================================
--- AI-ON v2 통합 셋업 SQL (010 + 011 + 012)
+-- AI-ON v2 통합 셋업 SQL (010 + 011 + 012 + 014)
 -- Supabase SQL Editor에 통째로 붙여넣고 한 번에 Run.
 -- 재원생 시드(013)는 PII라 별도 — 이 파일에 미포함.
 -- ============================================================
 
--- ===== [1/3] 010_v2_schema.sql =====
+-- ===== [1/4] 010_v2_schema.sql =====
 -- 010_v2_schema.sql — 수영 교육 데이터 플랫폼 v2 토대
 -- 적용: Supabase SQL Editor. 기존 진도관리 프로젝트 재활용(1주 테스트 테이블 drop 후) public 가정.
 
@@ -187,7 +187,7 @@ create trigger on_auth_user_created
   after insert on auth.users
   for each row execute procedure public.handle_new_user();
 
--- ===== [2/3] 011_v2_rls.sql =====
+-- ===== [2/4] 011_v2_rls.sql =====
 -- 011_v2_rls.sql — RLS + grants
 
 -- helper: 현재 사용자가 원장인가
@@ -275,7 +275,7 @@ create policy "영상 수정" on public.media for update to authenticated using 
 -- grants
 grant select, insert, update, delete on all tables in schema public to authenticated;
 
--- ===== [3/3] 012_v2_curriculum_seed.sql =====
+-- ===== [3/4] 012_v2_curriculum_seed.sql =====
 -- 생성물: 커리큘럼 버전1 시드 (7 영법, 144 단계)
 insert into curriculum_versions (label, status) values ('v1 - 2026 기본', 'active');
 insert into strokes (key,label,display_order,color) values ('beginner','초보',0,'#60a5fa');
@@ -457,3 +457,20 @@ insert into skill_steps (curriculum_version_id,stroke_id,track_id,key,label,ladd
 insert into skill_steps (curriculum_version_id,stroke_id,track_id,key,label,ladder_order,is_first_completion,measure_spec,step_kind) select (select id from curriculum_versions where label='v1 - 2026 기본'), (select id from strokes where key='etc'), (select id from skill_tracks where key='submarine' and stroke_id=(select id from strokes where key='etc')), 'etc.submarine.3','15M',142,false, array[]::text[],'ladder';
 insert into skill_steps (curriculum_version_id,stroke_id,track_id,key,label,ladder_order,is_first_completion,measure_spec,step_kind) select (select id from curriculum_versions where label='v1 - 2026 기본'), (select id from strokes where key='etc'), (select id from skill_tracks where key='submarine' and stroke_id=(select id from strokes where key='etc')), 'etc.submarine.4','20M',143,false, array[]::text[],'ladder';
 insert into skill_steps (curriculum_version_id,stroke_id,track_id,key,label,ladder_order,is_first_completion,measure_spec,step_kind) select (select id from curriculum_versions where label='v1 - 2026 기본'), (select id from strokes where key='etc'), (select id from skill_tracks where key='submarine' and stroke_id=(select id from strokes where key='etc')), 'etc.submarine.5','25M',144,false, array[]::text[],'counter';
+
+-- ===== [4/4] 014_v2_assign.sql =====
+-- 014_v2_assign.sql — 강사 반배정 이동 RPC
+-- 요일별로 다른 강사가 그날 학생을 자기 반으로 가져와 수업하는 흐름 지원.
+-- RLS상 강사는 자기 반 학생만 update 가능 → SECURITY DEFINER로 우회하되, 항상 호출자(auth.uid())로만 배정.
+create or replace function public.assign_student_to_me(p_student_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  update public.students set instructor_id = auth.uid() where id = p_student_id;
+end;
+$$;
+
+grant execute on function public.assign_student_to_me(uuid) to authenticated;

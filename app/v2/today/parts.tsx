@@ -2,7 +2,7 @@
 'use client'
 import { useState, useTransition } from 'react'
 import Link from 'next/link'
-import { markAttendance, setLaps } from '@/lib/v2/actions'
+import { markAttendance, setLaps, assignToMe } from '@/lib/v2/actions'
 import type { Attendance } from '@/types/v2'
 import type { TodayCard } from '@/lib/v2/today'
 
@@ -30,6 +30,21 @@ export function TodayCardItem({ card }: { card: TodayCard }) {
         <span className="w-8 text-center font-semibold">{laps}</span>
         <button onClick={() => { const v = laps + 1; setLapsState(v); start(() => setLaps(card.id, v)) }} className="w-8 h-8 rounded bg-gray-100">＋</button>
       </div>
+    </div>
+  )
+}
+
+// 오늘 수업이지만 미배정·타반 학생 → 내 반으로 가져오기
+export function AssignableCardItem({ card }: { card: TodayCard }) {
+  const [pending, start] = useTransition()
+  return (
+    <div className="bg-white rounded-xl border border-dashed flex items-center justify-between px-4 py-3">
+      <div>
+        <p className="font-medium text-gray-700">{card.name}<span className="ml-1 text-xs text-gray-400">{card.grade ?? ''}</span></p>
+        <p className="text-xs text-gray-400">{card.instructor_name ? `현재 ${card.instructor_name} 반` : '미배정'}</p>
+      </div>
+      <button disabled={pending} onClick={() => start(() => assignToMe(card.id))}
+        className="px-3 py-1.5 rounded-lg bg-blue-500 text-white text-xs font-semibold">{pending ? '…' : '내 반으로'}</button>
     </div>
   )
 }

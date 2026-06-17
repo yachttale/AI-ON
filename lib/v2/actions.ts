@@ -28,6 +28,14 @@ async function ensureSession(supabase: any, userId: string, studentId: string): 
   return data.id
 }
 
+// 반배정 이동: 오늘 수업할 학생을 호출 강사 본인 반으로 (RPC가 RLS 우회, 항상 auth.uid()로 배정)
+export async function assignToMe(studentId: string) {
+  const { supabase } = await ctx()
+  const { error } = await supabase.rpc('assign_student_to_me', { p_student_id: studentId })
+  if (error) throw error
+  revalidatePath('/v2/today')
+}
+
 export async function markAttendance(studentId: string, attendance: Attendance) {
   const { supabase, userId } = await ctx(); await assertOwns(supabase, userId, studentId)
   const { error } = await supabase.from('sessions')
