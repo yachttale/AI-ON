@@ -47,3 +47,4 @@ next-env.d.ts
 *.xlsx
 # xlsx에서 생성되는 학생 시드 SQL(실명·연락처 포함) — 로컬 전용
 /supabase/seed-local/
+.gstack/
