@@ -19,7 +19,7 @@ export function emitSeedSql(versionLabel: string): string {
     `(select id from strokes where key=${q(st.stroke_key)}), ` +
     `(select id from skill_tracks where key=${q(st.track_key)} and stroke_id=(select id from strokes where key=${q(st.stroke_key)})), ` +
     `${q(st.key)},${q(st.label)},${st.ladder_order},${st.is_first_completion}, ` +
-    `array[${st.measure_spec.map(q).join(',')}]::text[],${q(st.step_kind)});`))
+    `array[${st.measure_spec.map(q).join(',')}]::text[],${q(st.step_kind)};`))
   return lines.join('\n')
 }
 
