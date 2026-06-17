@@ -3,7 +3,9 @@ export type Role = 'instructor' | 'director'
 export type Attendance = '출석' | '지각' | '결석'
 export type AbsenceReason = '입원' | '아파서' | '다른일정' | '여행' | '기타'
 export type Difficulty = '어려워함' | '조금어려워함' | '중간' | '조금쉽게' | '쉽게해결'
-export type MetricType = 'laps' | 'distance_m' | 'time_sec' | 'stroke_count'
+export type MetricType = 'laps' | 'distance_m' | 'time_sec' | 'stroke_count' | 'attempt'
+// step_kind: ladder=통과형(단조 진행) / counter=누적 연습+완성(턴·스타트·잠영25M) / repeatable=반복 기록(50m바퀴·마스터거리)
+export type StepKind = 'ladder' | 'counter' | 'repeatable'
 export type CurriculumStatus = 'draft' | 'active' | 'archived'
 export type ProgressSource = 'observed' | 'baseline'
 
@@ -20,7 +22,7 @@ export interface SkillTrack {
 export interface SkillStep {
   id: string; curriculum_version_id: string; stroke_id: string; track_id: string | null
   key: string; label: string; ladder_order: number
-  is_first_completion: boolean; measure_spec: MetricType[]; is_active: boolean; created_at: string
+  is_first_completion: boolean; measure_spec: MetricType[]; step_kind: StepKind; is_active: boolean; created_at: string
 }
 export interface Student {
   id: string; name: string; birthdate: string | null; sex: '남' | '여' | null

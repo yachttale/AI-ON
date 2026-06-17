@@ -2,9 +2,8 @@
 // 원장 확정 시트 "AI-ON 영법 단계표 v1" (Google Sheet 1JPRbVu5Psi0ApiQGorznCrBlc2fqx5Ny8nZL9mmZe-Q) 구조화본.
 // v1 UI가 쓰는 lib/curriculum.ts와 의도적으로 분리 — v2 시드 전용 소스다.
 // 라벨은 시트 원문을 그대로 보존(오타 '콤비네에션' 포함). 측정/첫완주는 시트의 명시 컬럼을 그대로 옮긴다.
-import type { MetricType } from '@/types/v2'
-
-export type StepKind = 'ladder' | 'counter' | 'repeatable'
+import type { MetricType, StepKind } from '@/types/v2'
+export type { StepKind }
 //  ladder    = 통과형(한 번 통과, 단조 진행) — 핵심 사다리
 //  counter   = 누적 연습 횟수 + 완성 버튼(기타: 턴/스타트/잠영 25M)
 //  repeatable = 반복 기록형(영법별 50m 바퀴, 마스터 거리 — 중복 허용/주기 측정)

@@ -119,7 +119,7 @@ create index idx_sessions_instructor_date on public.sessions(instructor_id, sess
 create table public.measurements (
   id uuid primary key default gen_random_uuid(),
   student_id uuid not null references public.students(id) on delete cascade,
-  metric_type text not null check (metric_type in ('laps','distance_m','time_sec','stroke_count')),
+  metric_type text not null check (metric_type in ('laps','distance_m','time_sec','stroke_count','attempt')),
   value numeric not null,
   unit text,
   measured_on date not null default current_date,
