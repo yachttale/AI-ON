@@ -10,9 +10,17 @@ async function ctx() {
   if (!user) throw new Error('Unauthorized')
   return { supabase, userId: user.id }
 }
+// 기록 권한: 원장 ∪ 고정 담당 ∪ 오늘 요일 배정. (오늘 '내 수업' 판정과 동일 기준)
 async function assertOwns(supabase: Awaited<ReturnType<typeof createClient>>, userId: string, studentId: string) {
-  const { data } = await supabase.from('students').select('id').eq('id', studentId).eq('instructor_id', userId).single()
-  if (!data) throw new Error('Forbidden')
+  const { data: prof } = await supabase.from('profiles').select('role').eq('id', userId).single()
+  if (prof?.role === 'director') return  // 원장도 수업 — 모든 학생 기록 가능
+  const { data: s } = await supabase.from('students').select('instructor_id').eq('id', studentId).single()
+  if (s?.instructor_id === userId) return
+  const weekday = new Date().getDay()
+  const { data: a } = await supabase.from('student_day_instructors')
+    .select('instructor_id').eq('student_id', studentId).eq('weekday', weekday).maybeSingle()
+  if (a?.instructor_id === userId) return
+  throw new Error('Forbidden')
 }
 const today = () => new Date().toISOString().slice(0, 10)
 
