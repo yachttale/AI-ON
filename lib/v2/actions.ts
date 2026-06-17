@@ -11,7 +11,13 @@ async function ctx() {
   return { supabase, userId: user.id }
 }
 async function assertOwns(supabase: Awaited<ReturnType<typeof createClient>>, userId: string, studentId: string) {
-  const { data } = await supabase.from('students').select('id').eq('id', studentId).eq('instructor_id', userId).single()
+  // 원장(director)은 전체 학생 입력 허용
+  const { data: profile } = await supabase.from('profiles').select('role').eq('id', userId).maybeSingle()
+  if (profile?.role === 'director') return
+  // 강사: 오늘 요일에 이 학생이 내 배정인지 확인 (요일별 배정 기준)
+  const weekday = new Date().getDay()
+  const { data } = await supabase.from('student_day_instructors').select('student_id')
+    .eq('student_id', studentId).eq('weekday', weekday).eq('instructor_id', userId).maybeSingle()
   if (!data) throw new Error('Forbidden')
 }
 const today = () => new Date().toISOString().slice(0, 10)
