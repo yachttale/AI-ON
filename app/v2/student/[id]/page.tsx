@@ -1,10 +1,12 @@
 // app/v2/student/[id]/page.tsx — 학생 리포트 대시보드(레이더 + 지표 한눈에)
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { getStudentDashboard } from '@/lib/v2/data'
+import { createClient } from '@/lib/supabase/server'
+import { getStudentDashboard, getInstructors } from '@/lib/v2/data'
 import { relDayLabel } from '@/lib/v2/now'
 import { StrokeRadar } from './StrokeRadar'
 import { FeedbackDraft } from './FeedbackDraft'
+import { StudentManage } from './StudentManage'
 
 const KIND_STYLE: Record<string, string> = {
   pass: 'bg-blue-100 text-blue-700',
@@ -17,6 +19,11 @@ export default async function StudentDashboardPage({ params }: { params: Promise
   const d = await getStudentDashboard(id)
   if (!d) notFound()
   const km = (d.stats.totalDistanceM / 1000)
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  const { data: profile } = await supabase.from('profiles').select('role').eq('id', user!.id).single()
+  const isDirector = profile?.role === 'director'
+  const instructors = isDirector ? await getInstructors() : []
 
   return (
     <div className="space-y-4">
@@ -39,6 +46,9 @@ export default async function StudentDashboardPage({ params }: { params: Promise
           <span className="text-gray-400">입문일</span><span>{d.enrolled_on ?? '-'}</span>
         </div>
       </section>
+
+      <StudentManage studentId={id} isDirector={isDirector} currentInstructorId={d.instructorId}
+        instructors={instructors} withdrawalStatus={d.withdrawalStatus} />
 
       {/* 리포트: 레이더 + 지표 타일 */}
       <section className="bg-white rounded-2xl border p-4 space-y-4">

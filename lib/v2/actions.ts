@@ -128,6 +128,50 @@ export async function setClosureToday(closed: boolean) {
   revalidatePath('/v2/today'); revalidatePath('/v2/director')
 }
 
+async function isDirector(supabase: Awaited<ReturnType<typeof createClient>>, userId: string) {
+  const { data } = await supabase.from('profiles').select('role').eq('id', userId).maybeSingle()
+  return data?.role === 'director'
+}
+
+// 담당 강사(반) 변경 / 미배정. instructorId=null → 미배정. 원장은 임의 배정, 강사는 본인 학생 해제만.
+// 요일배정을 정리해 정적 담당을 단일 기준으로 둠.
+export async function setStudentInstructor(studentId: string, instructorId: string | null) {
+  const { supabase, userId } = await ctx()
+  const director = await isDirector(supabase, userId)
+  if (!director) {
+    await assertOwns(supabase, userId, studentId)
+    if (instructorId !== null && instructorId !== userId) throw new Error('Forbidden')
+  }
+  await supabase.from('student_day_instructors').delete().eq('student_id', studentId)
+  const { error } = await supabase.from('students').update({ instructor_id: instructorId }).eq('id', studentId)
+  if (error) throw error
+  for (const p of ['/v2/today', '/v2/students', '/v2/director', '/v2/director/students', `/v2/student/${studentId}`]) revalidatePath(p)
+}
+
+// 퇴원 신청(강사) → pending. 원장이 승인하면 비활성.
+export async function requestWithdrawal(studentId: string, note?: string) {
+  const { supabase, userId } = await ctx(); await assertOwns(supabase, userId, studentId)
+  const { error } = await supabase.from('students')
+    .update({ withdrawal_status: 'pending', withdrawal_requested_by: userId, withdrawal_note: note ?? null }).eq('id', studentId)
+  if (error) throw error
+  revalidatePath('/v2/director'); revalidatePath(`/v2/student/${studentId}`)
+}
+export async function cancelWithdrawal(studentId: string) {
+  const { supabase, userId } = await ctx(); await assertOwns(supabase, userId, studentId)
+  const { error } = await supabase.from('students')
+    .update({ withdrawal_status: null, withdrawal_requested_by: null, withdrawal_note: null, is_active: true }).eq('id', studentId)
+  if (error) throw error
+  for (const p of ['/v2/today', '/v2/students', '/v2/director', `/v2/student/${studentId}`]) revalidatePath(p)
+}
+export async function approveWithdrawal(studentId: string) {
+  const { supabase, userId } = await ctx()
+  if (!await isDirector(supabase, userId)) throw new Error('Forbidden')
+  const { error } = await supabase.from('students')
+    .update({ withdrawal_status: 'approved', is_active: false }).eq('id', studentId)
+  if (error) throw error
+  for (const p of ['/v2/today', '/v2/students', '/v2/director', '/v2/director/students', `/v2/student/${studentId}`]) revalidatePath(p)
+}
+
 // 결석 토글: 켜면 attendance='결석', 끄면 '출석'(출석은 암묵 기본).
 export async function markAbsent(studentId: string, absent: boolean) {
   const { supabase, userId } = await ctx(); await assertOwns(supabase, userId, studentId)

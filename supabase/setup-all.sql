@@ -509,3 +509,13 @@ create policy "휴원일 조회" on public.studio_closures for select to authent
 drop policy if exists "휴원일 관리" on public.studio_closures;
 create policy "휴원일 관리" on public.studio_closures for all to authenticated using (public.is_director()) with check (public.is_director());
 grant select, insert, update, delete on public.studio_closures to authenticated;
+
+-- ── 배정/퇴원 관리 권한 (017) ─────────────────────────────────────────────
+drop policy if exists "요일배정 삭제" on public.student_day_instructors;
+create policy "요일배정 삭제" on public.student_day_instructors for delete to authenticated
+  using (public.is_director() or instructor_id = auth.uid());
+-- 학생 수정: 원장 ∪ 고정담당 ∪ 요일배정 담당 (퇴원·미배정 처리)
+drop policy if exists "학생 수정" on public.students;
+create policy "학생 수정" on public.students for update to authenticated using (
+  public.is_director() or instructor_id = auth.uid()
+  or exists (select 1 from public.student_day_instructors sdi where sdi.student_id = students.id and sdi.instructor_id = auth.uid()));

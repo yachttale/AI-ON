@@ -301,10 +301,11 @@ export async function getDirectorDashboard(): Promise<DirectorDashboard> {
   interface Agg { scheduled: number; done: number; assigned: number; withdrawn: number; recentPasses: number }
   const instAgg = new Map<string, Agg>()
   const agg = (id: string) => instAgg.get(id) ?? instAgg.set(id, { scheduled: 0, done: 0, assigned: 0, withdrawn: 0, recentPasses: 0 }).get(id)!
-  // 담당·퇴원(고정 담당 기준)
+  // 담당·퇴원(담당 = 정적 ?? 요일배정 — 모든 화면과 동일 기준)
   for (const s of everStudents) {
-    if (!s.instructor_id) continue
-    const a = agg(s.instructor_id)
+    const eff = s.instructor_id ?? dayInstrAny.get(s.id) ?? null
+    if (!eff) continue
+    const a = agg(eff)
     if (s.is_active) a.assigned++; else a.withdrawn++
   }
   // 최근 7일 통과(baseline 제외)
@@ -407,10 +408,19 @@ export interface DashboardStats {
   totalPassed: number; favoriteStroke: string | null
   attendanceRate: number; presentN: number; absentN: number
 }
+export interface InstructorOption { id: string; name: string }
+export async function getInstructors(): Promise<InstructorOption[]> {
+  const supabase = await createClient()
+  const { data } = await supabase.from('profiles').select('id,name').in('role', ['instructor', 'director']).order('name')
+  return (data ?? []) as InstructorOption[]
+}
+
 export interface StudentDashboard {
   name: string; grade: string | null; schedule: string | null; enrolled_on: string | null
   sex: string | null; ageText: string | null
-  instructorName: string | null; currentStepLabel: string | null
+  instructorName: string | null; instructorId: string | null
+  withdrawalStatus: 'pending' | 'approved' | null
+  currentStepLabel: string | null
   strokeProgress: StrokeProgress[]
   radar: RadarAxis[]            // 영법별 진도% 레이더(전체 한눈에)
   stats: DashboardStats
@@ -430,7 +440,7 @@ function ageTextOf(birthdate: string | null): string | null {
 export async function getStudentDashboard(studentId: string): Promise<StudentDashboard | null> {
   const supabase = await createClient()
   const { data: student } = await supabase
-    .from('students').select('name,grade,schedule,enrolled_on,birthdate,sex,profiles:instructor_id(name)')
+    .from('students').select('name,grade,schedule,enrolled_on,birthdate,sex,instructor_id,withdrawal_status,profiles:instructor_id(name)')
     .eq('id', studentId).single()
   if (!student) return null
   const strokes = await getStrokeLadders(studentId)
@@ -449,9 +459,11 @@ export async function getStudentDashboard(studentId: string): Promise<StudentDas
     supabase.from('skill_progress').select('skill_step_id,passed_at,step_key_snapshot,source').eq('student_id', studentId),
     supabase.from('measurements').select('skill_step_id,metric_type,value,measured_on').eq('student_id', studentId),
     supabase.from('sessions').select('attendance,session_date').eq('student_id', studentId),
-    supabase.from('student_day_instructors').select('profiles:instructor_id(name)').eq('student_id', studentId).limit(1).maybeSingle(),
+    supabase.from('student_day_instructors').select('instructor_id,profiles:instructor_id(name)').eq('student_id', studentId).limit(1).maybeSingle(),
   ])
   // 담당 = 정적 담당 ?? 요일 배정 강사
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const instructorId = (student as any).instructor_id ?? (dayAssign as any)?.instructor_id ?? null
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const instructorName = (student as any).profiles?.name ?? (dayAssign as any)?.profiles?.name ?? null
   const since = kstDaysAgo(30)
@@ -530,7 +542,9 @@ export async function getStudentDashboard(studentId: string): Promise<StudentDas
     name: student.name, grade: student.grade, schedule: student.schedule, enrolled_on: student.enrolled_on,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     sex: (student as any).sex ?? null, ageText: ageTextOf((student as any).birthdate ?? null),
-    instructorName,
+    instructorName, instructorId,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    withdrawalStatus: (student as any).withdrawal_status ?? null,
     currentStepLabel, strokeProgress, radar, stats, dailyLog, feedbackDraft: draft,
   }
 }

@@ -5,9 +5,9 @@ import Link from 'next/link'
 import { strokeBadge } from '@/lib/v2/stroke-colors'
 import type { DirectorRosterRow } from '@/lib/v2/data'
 
-export function RosterList({ rows }: { rows: DirectorRosterRow[] }) {
+export function RosterList({ rows, initialInst = '' }: { rows: DirectorRosterRow[]; initialInst?: string }) {
   const [q, setQ] = useState('')
-  const [inst, setInst] = useState('')
+  const [inst, setInst] = useState(initialInst)
   const instructors = useMemo(
     () => [...new Set(rows.map(r => r.instructorName).filter(Boolean) as string[])].sort(),
     [rows],

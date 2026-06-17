@@ -46,9 +46,9 @@ export default async function DirectorPage() {
           <h2 className="text-sm font-bold text-gray-700 mb-2">강사별 현황</h2>
           <div className="space-y-2">
             {d.instructorStats.map(inst => (
-              <div key={inst.id} className="bg-white rounded-xl px-4 py-3 border space-y-2">
+              <Link key={inst.id} href={`/v2/director/students?inst=${encodeURIComponent(inst.name)}`} className="block bg-white rounded-xl px-4 py-3 border space-y-2">
                 <div className="flex items-center justify-between">
-                  <span className="text-sm font-bold text-gray-800">{inst.name}</span>
+                  <span className="text-sm font-bold text-gray-800">{inst.name} <span className="text-gray-300 font-normal">›</span></span>
                   <div className="flex items-center gap-2">
                     <div className="flex gap-0.5">
                       {Array.from({ length: inst.scheduled }).map((_, i) => (
@@ -63,7 +63,7 @@ export default async function DirectorPage() {
                   <Mini label="최근7일 통과" value={`${inst.recentPasses}`} accent />
                   <Mini label="퇴원율" value={`${inst.withdrawalRate}%`} warn={inst.withdrawalRate >= 20} sub={`${inst.withdrawn}명`} />
                 </div>
-              </div>
+              </Link>
             ))}
           </div>
           <p className="text-[11px] text-gray-300 mt-1.5">* 퇴원율·통과 수는 데이터가 쌓일수록 정확해집니다(현재 초기 수집 단계).</p>
