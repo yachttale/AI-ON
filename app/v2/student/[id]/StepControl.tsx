@@ -1,7 +1,7 @@
 // app/v2/student/[id]/StepControl.tsx — step_kind 분기 입력 섬
 'use client'
 import { useState, useTransition } from 'react'
-import { passStepAction, addAttempt, completeCounter, logRepeatable } from '@/lib/v2/actions'
+import { passStepAction, passLadderCascade, addAttempt, completeCounter, logRepeatable } from '@/lib/v2/actions'
 import type { LadderStepView } from '@/lib/v2/ladder'
 
 export function StepControl({ studentId, step }: { studentId: string; step: LadderStepView }) {
@@ -26,6 +26,15 @@ export function StepControl({ studentId, step }: { studentId: string; step: Ladd
       </div>
     )
   }
+  if (step.step_kind === 'single') {
+    // 개별 통과(구르기 등) — cascade 없음, 측정 없음
+    return (
+      <div className="flex items-center gap-2 py-1">
+        <span className={`flex-1 text-sm ${step.passed ? 'text-gray-400 line-through' : ''}`}>{step.label}{step.passSource === 'baseline' && <em className="ml-1 text-[10px] text-gray-400">기준</em>}</span>
+        {!step.passed && <button disabled={pending} onClick={() => start(() => passStepAction(studentId, snap))} className="px-3 py-1 rounded bg-blue-500 text-white text-xs">통과</button>}
+      </div>
+    )
+  }
   if (step.step_kind === 'repeatable') {
     return (
       <div className="flex items-center gap-2 py-1">
@@ -44,7 +53,7 @@ export function StepControl({ studentId, step }: { studentId: string; step: Ladd
       <span className={`flex-1 text-sm ${step.passed ? 'text-gray-400 line-through' : step.isCurrent ? 'font-semibold text-blue-600' : ''}`}>{step.label}{step.passSource === 'baseline' && <em className="ml-1 text-[10px] text-gray-400">기준</em>}</span>
       {step.measure_spec.includes('time_sec') && !step.passed && <input value={time} onChange={e => setTime(e.target.value)} inputMode="numeric" placeholder="초" className="w-12 border rounded px-1 text-xs" />}
       {step.measure_spec.includes('stroke_count') && !step.passed && <input value={strokes} onChange={e => setStrokes(e.target.value)} inputMode="numeric" placeholder="스트로크" className="w-16 border rounded px-1 text-xs" />}
-      {!step.passed && <button disabled={pending} onClick={() => start(() => passStepAction(studentId, snap, { measures: measures() }))} className="px-3 py-1 rounded bg-blue-500 text-white text-xs">통과</button>}
+      {!step.passed && <button disabled={pending} onClick={() => start(() => passLadderCascade(studentId, { ...snap, stroke_key: step.stroke_key }, { measures: measures() }))} className="px-3 py-1 rounded bg-blue-500 text-white text-xs">통과</button>}
     </div>
   )
 }

@@ -4,8 +4,8 @@ export type Attendance = '출석' | '지각' | '결석'
 export type AbsenceReason = '입원' | '아파서' | '다른일정' | '여행' | '기타'
 export type Difficulty = '어려워함' | '조금어려워함' | '중간' | '조금쉽게' | '쉽게해결'
 export type MetricType = 'laps' | 'distance_m' | 'time_sec' | 'stroke_count' | 'attempt'
-// step_kind: ladder=통과형(단조 진행) / counter=누적 연습+완성(턴·스타트·잠영25M) / repeatable=반복 기록(50m바퀴·마스터거리)
-export type StepKind = 'ladder' | 'counter' | 'repeatable'
+// step_kind: ladder=계단식(상위 통과 시 하위 자동) / counter=누적 연습+완성(턴·스타트·잠영25M) / repeatable=반복 기록(50m바퀴·마스터거리) / single=개별 통과(구르기 등, cascade 없음)
+export type StepKind = 'ladder' | 'counter' | 'repeatable' | 'single'
 export type CurriculumStatus = 'draft' | 'active' | 'archived'
 export type ProgressSource = 'observed' | 'baseline'
 
