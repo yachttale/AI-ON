@@ -1,4 +1,3 @@
-npm warn exec The following package was not found and will be installed: tsx@4.22.4
 -- 생성물: 커리큘럼 버전1 시드 (7 영법, 144 단계)
 insert into curriculum_versions (label, status) values ('v1 - 2026 기본', 'active');
 insert into strokes (key,label,display_order,color) values ('beginner','초보',0,'#60a5fa');
