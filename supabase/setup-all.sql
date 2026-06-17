@@ -495,3 +495,17 @@ end;
 $$;
 
 grant execute on function public.assign_day_to_me(uuid, smallint) to authenticated;
+
+-- ── 휴원일(휴관일) ─────────────────────────────────────────────────────────
+create table if not exists public.studio_closures (
+  closed_on date primary key,
+  reason text,
+  created_by uuid references public.profiles(id),
+  created_at timestamptz default now() not null
+);
+alter table public.studio_closures enable row level security;
+drop policy if exists "휴원일 조회" on public.studio_closures;
+create policy "휴원일 조회" on public.studio_closures for select to authenticated using (true);
+drop policy if exists "휴원일 관리" on public.studio_closures;
+create policy "휴원일 관리" on public.studio_closures for all to authenticated using (public.is_director()) with check (public.is_director());
+grant select, insert, update, delete on public.studio_closures to authenticated;
