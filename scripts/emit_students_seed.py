@@ -7,9 +7,13 @@
 #
 # 매핑: 이름→name, 입학일→enrolled_on, 수업시간→schedule, 휴대전화→phone, is_active=true.
 # 기능(skill) 데이터는 명단에 없음 → skill_progress 베이스라인은 강사 첫 관찰로 별도 입력(source='baseline').
-import sys, datetime, openpyxl
+import sys, glob, datetime, openpyxl
 
-XLSX = "재원생 DB.xlsx"
+# PII 명단 xlsx 자동 탐색(레포 루트, gitignore된 *.xlsx 1개 가정)
+_candidates = glob.glob("*.xlsx")
+if not _candidates:
+    sys.exit("xlsx 파일을 레포 루트에서 찾을 수 없습니다.")
+XLSX = _candidates[0]
 
 def q(v):
     if v is None or v == "":
@@ -31,11 +35,11 @@ def main():
 
     out = []
     out.append(f"-- 생성물: 재원생 cold-start 시드 ({len(rows)}명) — PII 포함, 커밋 금지")
-    out.append("-- 컬럼: 구분 / 이름 / 입학일 / 휴대전화 / 수업시간")
+    out.append("-- 컬럼: 이름 / 입학일 / 휴대전화 / 수업시간 (강사 배정 정보 없음 → instructor_id 미배정)")
     out.append("-- 최초 1회만 실행 (중복 실행 시 학생 중복 생성 주의)")
     out.append("begin;")
     for r in rows:
-        _gubun, name, enrolled, phone, schedule = (list(r) + [None] * 5)[:5]
+        name, enrolled, phone, schedule = (list(r) + [None] * 4)[:4]
         out.append(
             "insert into public.students (name, enrolled_on, schedule, phone, is_active) "
             f"values ({q(name)}, {qdate(enrolled)}, {q(schedule)}, {q(phone)}, true);"
