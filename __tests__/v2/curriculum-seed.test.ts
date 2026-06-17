@@ -46,11 +46,12 @@ describe('buildSeedRows (확정 시트 v1)', () => {
     expect(fc.every(s => /25m|200M/.test(s.label))).toBe(true)
   })
 
-  it('step_kind: 마스터·영법별 50m=repeatable, 턴/스타트/잠영25M=counter, 나머지=ladder', () => {
+  it('step_kind: 마스터·영법별 50m=repeatable, 턴/스타트/잠영25M=counter, 구르기=single, 나머지=ladder', () => {
     const byKind = (k: string) => seed.steps.filter(s => s.step_kind === k).length
     expect(byKind('repeatable')).toBe(9)   // 50m 바퀴 4 + 마스터 5
     expect(byKind('counter')).toBe(5)      // 턴 2 + 스타트 2 + 잠영 25M 1
-    expect(byKind('ladder')).toBe(130)
+    expect(byKind('single')).toBe(5)       // 초보 구르기류(앞·옆·뒷구르기·물구나무·물대포)
+    expect(byKind('ladder')).toBe(125)
 
     expect(seed.steps.find(s => s.key === 'master.im.1')!.step_kind).toBe('repeatable')
     const sub25 = seed.steps.find(s => s.stroke_key === 'etc' && s.label === '25M')!

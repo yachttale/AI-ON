@@ -12,14 +12,14 @@ async function ctx() {
 }
 // 기록 권한: 원장 ∪ 고정 담당 ∪ 오늘 요일 배정. (오늘 '내 수업' 판정과 동일 기준)
 async function assertOwns(supabase: Awaited<ReturnType<typeof createClient>>, userId: string, studentId: string) {
-  const { data: prof } = await supabase.from('profiles').select('role').eq('id', userId).single()
+  const { data: prof } = await supabase.from('profiles').select('role').eq('id', userId).maybeSingle()
   if (prof?.role === 'director') return  // 원장도 수업 — 모든 학생 기록 가능
-  const { data: s } = await supabase.from('students').select('instructor_id').eq('id', studentId).single()
-  if (s?.instructor_id === userId) return
+  const { data: s } = await supabase.from('students').select('instructor_id').eq('id', studentId).maybeSingle()
+  if (s?.instructor_id === userId) return  // 고정 담당
   const weekday = new Date().getDay()
   const { data: a } = await supabase.from('student_day_instructors')
     .select('instructor_id').eq('student_id', studentId).eq('weekday', weekday).maybeSingle()
-  if (a?.instructor_id === userId) return
+  if (a?.instructor_id === userId) return  // 오늘 요일 배정(오버라이드)
   throw new Error('Forbidden')
 }
 const today = () => new Date().toISOString().slice(0, 10)
@@ -136,11 +136,54 @@ export async function markAbsent(studentId: string, absent: boolean) {
   revalidatePath('/v2/today')
 }
 
+// 계단식 통과: 같은 영법의 ladder_order 이하 ladder 단계를 모두 통과(상위 클릭 → 하위 자동). single/counter/repeatable 제외.
+export async function passLadderCascade(studentId: string, step: { id: string; key: string; ladder_order: number; stroke_key: string }, opts: { measures?: { metric: MetricType; value: number }[] } = {}) {
+  const { supabase, userId } = await ctx(); await assertOwns(supabase, userId, studentId)
+  const sessionId = await ensureSession(supabase, userId, studentId)
+  const { data: version } = await supabase.from('curriculum_versions').select('id').eq('status', 'active').maybeSingle()
+  if (!version) return
+  const { data: stroke } = await supabase.from('strokes').select('id').eq('key', step.stroke_key).maybeSingle()
+  if (!stroke) return
+  const { data: steps } = await supabase.from('skill_steps').select('id,key,ladder_order')
+    .eq('curriculum_version_id', version.id).eq('stroke_id', stroke.id).eq('step_kind', 'ladder')
+    .lte('ladder_order', step.ladder_order)
+  const rows = (steps ?? []).map(s => ({
+    student_id: studentId, skill_step_id: s.id, source: 'observed', instructor_id: userId,
+    source_session_id: sessionId, step_key_snapshot: s.key, ladder_order_snapshot: s.ladder_order,
+  }))
+  if (rows.length) {
+    const { error } = await supabase.from('skill_progress').upsert(rows, { onConflict: 'student_id,skill_step_id', ignoreDuplicates: true })
+    if (error) throw error
+  }
+  // 클릭한 단계의 측정값(완주 시간·스트로크)만 기록
+  for (const m of opts.measures ?? []) {
+    await supabase.from('measurements').insert({ student_id: studentId, metric_type: m.metric, value: m.value, measured_on: today(), session_id: sessionId, skill_step_id: step.id, instructor_id: userId })
+  }
+  revalidatePath(`/v2/student/${studentId}`)
+}
+
 export async function addAttempt(studentId: string, stepId: string) {
   const { supabase, userId } = await ctx(); await assertOwns(supabase, userId, studentId)
   const sessionId = await ensureSession(supabase, userId, studentId)
   const { error } = await supabase.from('measurements').insert({ student_id: studentId, metric_type: 'attempt', value: 1, measured_on: today(), session_id: sessionId, skill_step_id: stepId, instructor_id: userId })
   if (error) throw error
+  revalidatePath(`/v2/student/${studentId}`)
+}
+
+// 개별 체크(구르기·물대포 등) 토글 — 진도 사다리와 무관한 물 적응 지표. 체크/해제 자유.
+export async function toggleSingleCheck(studentId: string, step: { id: string; key: string; ladder_order: number }, checked: boolean) {
+  const { supabase, userId } = await ctx(); await assertOwns(supabase, userId, studentId)
+  if (checked) {
+    const { error } = await supabase.from('skill_progress').delete().eq('student_id', studentId).eq('skill_step_id', step.id)
+    if (error) throw error
+  } else {
+    const sessionId = await ensureSession(supabase, userId, studentId)
+    const { error } = await supabase.from('skill_progress').insert({
+      student_id: studentId, skill_step_id: step.id, source: 'observed', instructor_id: userId,
+      source_session_id: sessionId, step_key_snapshot: step.key, ladder_order_snapshot: step.ladder_order,
+    })
+    if (error && !String(error.message).includes('duplicate')) throw error
+  }
   revalidatePath(`/v2/student/${studentId}`)
 }
 

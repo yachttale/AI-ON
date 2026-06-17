@@ -52,7 +52,10 @@ export const SHEET_CURRICULUM: SheetStroke[] = [
           '잠수 - 코까지', '잠수 - 얼굴까지', '잠수 - 귀까지', '잠수 - 머리 전체',
           '잠수 - 5초', '잠수 - 10초', '잠수 - 20초',
           '바닥에 앉기', '물건 줍기',
-          '앞구르기', '옆구르기', '뒷구르기', '물구나무 서기', '물대포',
+          // 구르기류 — 서로 독립 스킬(계단식 cascade 제외)
+          { label: '앞구르기', kind: 'single' }, { label: '옆구르기', kind: 'single' },
+          { label: '뒷구르기', kind: 'single' }, { label: '물구나무 서기', kind: 'single' },
+          { label: '물대포', kind: 'single' },
         ],
       },
     ],

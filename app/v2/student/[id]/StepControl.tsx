@@ -1,7 +1,7 @@
 // app/v2/student/[id]/StepControl.tsx — step_kind 분기 입력 섬
 'use client'
 import { useState, useTransition } from 'react'
-import { passStepAction, addAttempt, completeCounter, logRepeatable, recordMeasureToday } from '@/lib/v2/actions'
+import { passLadderCascade, toggleSingleCheck, addAttempt, completeCounter, logRepeatable, recordMeasureToday } from '@/lib/v2/actions'
 import type { LadderStepView } from '@/lib/v2/ladder'
 
 export function StepControl({ studentId, step }: { studentId: string; step: LadderStepView }) {
@@ -24,6 +24,16 @@ export function StepControl({ studentId, step }: { studentId: string; step: Ladd
         <button disabled={pending} onClick={() => start(() => addAttempt(studentId, step.id))} className="px-2 py-1 rounded bg-gray-100 text-xs">+1</button>
         {!step.passed && <button disabled={pending} onClick={() => start(() => completeCounter(studentId, snap))} className="px-2 py-1 rounded bg-green-500 text-white text-xs">완성</button>}
       </div>
+    )
+  }
+  if (step.step_kind === 'single') {
+    // 개별 체크(구르기·물대포) — 진도 사다리와 무관한 물 적응 지표. 체크/해제 토글.
+    return (
+      <button disabled={pending} onClick={() => start(() => toggleSingleCheck(studentId, snap, step.passed))}
+        className="flex items-center gap-2 py-1 w-full text-left disabled:opacity-60">
+        <span className={`w-5 h-5 rounded border flex items-center justify-center text-xs shrink-0 ${step.passed ? 'bg-green-500 border-green-500 text-white' : 'border-gray-300 text-transparent'}`}>✓</span>
+        <span className={`text-sm ${step.passed ? 'text-gray-700 font-medium' : 'text-gray-500'}`}>{step.label}</span>
+      </button>
     )
   }
   if (step.step_kind === 'repeatable') {
@@ -52,7 +62,7 @@ export function StepControl({ studentId, step }: { studentId: string; step: Ladd
       {step.measure_spec.includes('time_sec') && <input value={time} onChange={e => setTime(e.target.value)} inputMode="numeric" placeholder="초" className="w-12 border rounded px-1 text-xs" />}
       {step.measure_spec.includes('stroke_count') && <input value={strokes} onChange={e => setStrokes(e.target.value)} inputMode="numeric" placeholder="스트로크" className="w-16 border rounded px-1 text-xs" />}
       {!step.passed
-        ? <button disabled={pending} onClick={() => start(() => passStepAction(studentId, snap, { measures: measures() }))} className="px-3 py-1 rounded bg-blue-500 text-white text-xs">통과</button>
+        ? <button disabled={pending} onClick={() => start(() => passLadderCascade(studentId, { ...snap, stroke_key: step.stroke_key }, { measures: measures() }))} className="px-3 py-1 rounded bg-blue-500 text-white text-xs">통과</button>
         : hasMeasure && <button disabled={pending} onClick={addGrowth} className="px-2 py-1 rounded bg-gray-100 text-gray-600 text-xs">기록 추가</button>}
     </div>
   )
