@@ -5,8 +5,9 @@ import type { TodayStudent, TodaySession, TodayCard, TodayCardView } from './tod
 import { buildTodayCardView } from './today'
 import { buildStrokeLadders, selectCardWindow, type LadderInputStep, type StrokeLadderView } from './ladder'
 import { getTodayEntries } from '@/lib/schedule'
+import { kstToday, kstWeekday, kstDaysAgo } from '@/lib/v2/now'
 
-const todayStr = () => new Date().toISOString().slice(0, 10)
+const todayStr = kstToday
 
 // 활성 커리큘럼 버전 id
 async function getActiveVersionId(
@@ -96,8 +97,8 @@ export async function recordMeasurement(m: Omit<Measurement, 'id' | 'created_at'
 // 내 반/가져오기 구분은 buildTodayCards가 currentUserId로 수행(요일별 다른 강사 지원).
 export async function getTodayStudentsRaw(): Promise<{ students: TodayStudent[]; sessionById: Map<string, TodaySession> }> {
   const supabase = await createClient()
-  const today = new Date().toISOString().slice(0, 10)
-  const weekday = new Date().getDay()  // 0=일 ~ 6=토
+  const today = kstToday()
+  const weekday = kstWeekday()  // 0=일 ~ 6=토 (KST)
   const { data: rows, error } = await supabase
     .from('students')
     .select('id,name,grade,schedule,instructor_id')
@@ -248,7 +249,7 @@ export interface DirectorDashboard {
 export async function getDirectorDashboard(): Promise<DirectorDashboard> {
   const supabase = await createClient()
   const today = todayStr()
-  const weekday = new Date().getDay()
+  const weekday = kstWeekday()
   const versionId = await getActiveVersionId(supabase)
   const inputs = versionId ? await getLadderInputs(supabase, versionId) : []
 
@@ -262,21 +263,27 @@ export async function getDirectorDashboard(): Promise<DirectorDashboard> {
     if (s.step_kind === 'ladder') { stepStroke.set(s.id, s.stroke_key); ladderTotal.set(s.stroke_key, (ladderTotal.get(s.stroke_key) ?? 0) + 1) }
   }
 
-  const since7 = new Date(Date.now() - 7 * 864e5).toISOString().slice(0, 10)
-  const since30 = new Date(Date.now() - 30 * 864e5).toISOString().slice(0, 10)
+  const since7 = kstDaysAgo(7)
+  const since30 = kstDaysAgo(30)
   const [{ data: allStudents }, { data: profiles }, { data: prog }, { data: sessions }, { data: sdi }] = await Promise.all([
     // 퇴원율 계산 위해 비활성 포함 전체 로드
     supabase.from('students').select('id,name,schedule,instructor_id,is_active,withdrawal_status,enrolled_on').order('name'),
     supabase.from('profiles').select('id,name,role'),
     supabase.from('skill_progress').select('student_id,skill_step_id,instructor_id,passed_at,source'),
     supabase.from('sessions').select('student_id,attendance').eq('session_date', today),
-    supabase.from('student_day_instructors').select('student_id,instructor_id').eq('weekday', weekday),
+    supabase.from('student_day_instructors').select('student_id,instructor_id,weekday'),
   ])
   const everStudents = allStudents ?? []
   const studentList = everStudents.filter(s => s.is_active)
   const nameById = new Map((profiles ?? []).map(p => [p.id, p.name]))
   const instructors = (profiles ?? []).filter(p => p.role === 'instructor' || p.role === 'director')
-  const dayInstr = new Map((sdi ?? []).map(a => [a.student_id, a.instructor_id]))
+  // 오늘 요일 배정(입력 현황용) + 전체 요일 배정(담당 표시 fallback용)
+  const dayInstr = new Map((sdi ?? []).filter(a => a.weekday === weekday).map(a => [a.student_id, a.instructor_id]))
+  const dayInstrAny = new Map<string, string>()
+  for (const a of sdi ?? []) if (!dayInstrAny.has(a.student_id)) dayInstrAny.set(a.student_id, a.instructor_id)
+  // 담당 = 정적 담당 ?? 요일 배정(아무 요일). 둘 다 없으면 미배정.
+  const ownerName = (s: { id: string; instructor_id: string | null }) =>
+    nameById.get(s.instructor_id ?? dayInstrAny.get(s.id) ?? '') ?? null
   const doneSet = new Set((sessions ?? []).map(s => s.student_id))
   const todayAbsent = (sessions ?? []).filter(s => s.attendance === '결석').length
   const pendingWithdrawals = everStudents.filter(s => s.withdrawal_status === 'pending').length
@@ -335,7 +342,7 @@ export async function getDirectorDashboard(): Promise<DirectorDashboard> {
       const rows: DirectorStudentRow[] = studentList
         .map(s => ({ s, passed: passedByStroke.get(s.id)?.get(sk) ?? 0 }))
         .filter(({ passed }) => passed > 0 && passed < total)
-        .map(({ s, passed }) => ({ id: s.id, name: s.name, passed, total, instructorName: s.instructor_id ? nameById.get(s.instructor_id) ?? null : null }))
+        .map(({ s, passed }) => ({ id: s.id, name: s.name, passed, total, instructorName: ownerName(s) }))
       return { stroke_key: sk, stroke_label: strokeMeta.get(sk)!, students: rows }
     })
     .filter(g => g.students.length > 0)
@@ -361,12 +368,15 @@ export async function getDirectorRoster(): Promise<DirectorRosterRow[]> {
   const versionId = await getActiveVersionId(supabase)
   const inputs = versionId ? await getLadderInputs(supabase, versionId) : []
   const ladderIds = new Set(inputs.filter(s => s.step_kind === 'ladder').map(s => s.id))
-  const [{ data: students }, { data: profiles }, { data: prog }] = await Promise.all([
+  const [{ data: students }, { data: profiles }, { data: prog }, { data: sdi }] = await Promise.all([
     supabase.from('students').select('id,name,schedule,grade,instructor_id').eq('is_active', true).order('name'),
     supabase.from('profiles').select('id,name'),
     supabase.from('skill_progress').select('student_id,skill_step_id,source'),
+    supabase.from('student_day_instructors').select('student_id,instructor_id'),
   ])
   const nameById = new Map((profiles ?? []).map(p => [p.id, p.name]))
+  const dayInstrAny = new Map<string, string>()
+  for (const a of sdi ?? []) if (!dayInstrAny.has(a.student_id)) dayInstrAny.set(a.student_id, a.instructor_id)
   const passedBy = new Map<string, Set<string>>(); const sourceBy = new Map<string, Map<string, ProgressSource>>()
   for (const p of prog ?? []) {
     ;(passedBy.get(p.student_id) ?? passedBy.set(p.student_id, new Set()).get(p.student_id)!).add(p.skill_step_id)
@@ -380,7 +390,7 @@ export async function getDirectorRoster(): Promise<DirectorRosterRow[]> {
     let passedLadder = 0; for (const id of passed) if (ladderIds.has(id)) passedLadder++
     return {
       id: s.id, name: s.name, schedule: s.schedule, grade: s.grade,
-      instructorName: s.instructor_id ? nameById.get(s.instructor_id) ?? null : null,
+      instructorName: nameById.get(s.instructor_id ?? dayInstrAny.get(s.id) ?? '') ?? null,
       focusStrokeKey: focus?.stroke_key ?? null, focusStrokeLabel: focus?.stroke_label ?? null,
       currentStepLabel, passedLadder,
     }
@@ -391,19 +401,36 @@ export async function getDirectorRoster(): Promise<DirectorRosterRow[]> {
 export interface StrokeProgress { stroke_key: string; stroke_label: string; color: string | null; passed: number; total: number; pct: number }
 export type ActivityKind = 'practice' | 'pass' | 'measure'
 export interface DayActivity { date: string; items: { label: string; kind: ActivityKind }[] }
+export interface RadarAxis { label: string; pct: number }
+export interface DashboardStats {
+  recordDays: number; totalDistanceM: number; avgDistanceM: number
+  totalPassed: number; favoriteStroke: string | null
+  attendanceRate: number; presentN: number; absentN: number
+}
 export interface StudentDashboard {
   name: string; grade: string | null; schedule: string | null; enrolled_on: string | null
+  sex: string | null; ageText: string | null
   instructorName: string | null; currentStepLabel: string | null
   strokeProgress: StrokeProgress[]
+  radar: RadarAxis[]            // 영법별 진도% 레이더(전체 한눈에)
+  stats: DashboardStats
   dailyLog: DayActivity[]       // 일별로 그날 한 것(연습·통과·측정) — 매일 기록이 보이도록
   feedbackDraft: string         // 부모 전송용 자동 초안(최근 한 달)
 }
 const unitOf = (metric: string) => metric === 'time_sec' ? '초' : metric === 'stroke_count' ? '스트로크' : metric === 'laps' ? '바퀴' : 'm'
+function ageTextOf(birthdate: string | null): string | null {
+  if (!birthdate) return null
+  const b = new Date(birthdate), now = new Date()
+  let age = now.getFullYear() - b.getFullYear()
+  const m = now.getMonth() - b.getMonth()
+  if (m < 0 || (m === 0 && now.getDate() < b.getDate())) age--
+  return age >= 0 && age < 100 ? `${age}세` : null
+}
 
 export async function getStudentDashboard(studentId: string): Promise<StudentDashboard | null> {
   const supabase = await createClient()
   const { data: student } = await supabase
-    .from('students').select('name,grade,schedule,enrolled_on,profiles:instructor_id(name)')
+    .from('students').select('name,grade,schedule,enrolled_on,birthdate,sex,profiles:instructor_id(name)')
     .eq('id', studentId).single()
   if (!student) return null
   const strokes = await getStrokeLadders(studentId)
@@ -415,27 +442,56 @@ export async function getStudentDashboard(studentId: string): Promise<StudentDas
   })
   const currentStepLabel = strokes.flatMap(s => s.tracks.flatMap(t => t.steps)).find(st => st.isCurrent)?.label ?? null
 
-  const since = new Date(Date.now() - 30 * 864e5).toISOString().slice(0, 10)
   const labelById = new Map<string, string>()
   for (const s of strokes) for (const t of s.tracks) for (const st of t.steps) labelById.set(st.id, st.label)
-  const [{ data: prog }, { data: meas }, { data: sessions }] = await Promise.all([
-    supabase.from('skill_progress').select('skill_step_id,passed_at,step_key_snapshot,source').eq('student_id', studentId).gte('passed_at', since),
-    supabase.from('measurements').select('skill_step_id,metric_type,value,measured_on').eq('student_id', studentId).gte('measured_on', since).not('skill_step_id', 'is', null),
-    supabase.from('sessions').select('attendance,session_date').eq('student_id', studentId).gte('session_date', since),
+  // 전체 기간 로드(총 지표용). 일별/피드백은 최근 30일만 사용.
+  const [{ data: prog }, { data: meas }, { data: sessions }, { data: dayAssign }] = await Promise.all([
+    supabase.from('skill_progress').select('skill_step_id,passed_at,step_key_snapshot,source').eq('student_id', studentId),
+    supabase.from('measurements').select('skill_step_id,metric_type,value,measured_on').eq('student_id', studentId),
+    supabase.from('sessions').select('attendance,session_date').eq('student_id', studentId),
+    supabase.from('student_day_instructors').select('profiles:instructor_id(name)').eq('student_id', studentId).limit(1).maybeSingle(),
   ])
+  // 담당 = 정적 담당 ?? 요일 배정 강사
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const instructorName = (student as any).profiles?.name ?? (dayAssign as any)?.profiles?.name ?? null
+  const since = kstDaysAgo(30)
 
-  // 일별 활동 그룹 (연습 attempt 포함 — 매일 기록이 보이게)
+  // ── 총 지표(전체 기간) ──
+  const recordDates = new Set<string>()
+  let totalDistanceM = 0
+  for (const m of meas ?? []) {
+    recordDates.add(m.measured_on)
+    if (m.metric_type === 'laps') totalDistanceM += Number(m.value) * 50
+    else if (m.metric_type === 'distance_m') totalDistanceM += Number(m.value)
+  }
+  for (const s of sessions ?? []) recordDates.add(s.session_date)
+  const recordDays = recordDates.size
+  const presentN = (sessions ?? []).filter(s => s.attendance === '출석' || s.attendance === '지각').length
+  const absentN = (sessions ?? []).filter(s => s.attendance === '결석').length
+  const totalPassed = strokeProgress.reduce((a, s) => a + s.passed, 0)
+  const fav = [...strokeProgress].filter(s => s.passed > 0).sort((a, b) => b.passed - a.passed)[0]
+  const stats: DashboardStats = {
+    recordDays, totalDistanceM,
+    avgDistanceM: recordDays ? Math.round(totalDistanceM / recordDays) : 0,
+    totalPassed, favoriteStroke: fav?.stroke_label ?? null,
+    attendanceRate: presentN + absentN ? Math.round((presentN / (presentN + absentN)) * 100) : 0,
+    presentN, absentN,
+  }
+  const radar: RadarAxis[] = strokeProgress.filter(s => s.total > 0).map(s => ({ label: s.stroke_label, pct: s.pct }))
+
+  // ── 일별 활동(최근 30일, 연습 포함) ──
   const byDate = new Map<string, { label: string; kind: ActivityKind }[]>()
-  const seen = new Set<string>()  // 같은 날 같은 스텝 연습 중복 제거
+  const seen = new Set<string>()
   const push = (date: string, label: string, kind: ActivityKind) => {
     const arr = byDate.get(date) ?? byDate.set(date, []).get(date)!
     arr.push({ label, kind })
   }
   for (const p of prog ?? []) {
-    if (p.source === 'baseline') continue  // 베이스라인 배치는 일별 활동 아님
+    if (p.source === 'baseline' || p.passed_at < since) continue
     push(p.passed_at, `${labelById.get(p.skill_step_id) ?? p.step_key_snapshot} 통과`, 'pass')
   }
   for (const m of meas ?? []) {
+    if (!m.skill_step_id || m.measured_on < since) continue
     const label = labelById.get(m.skill_step_id) ?? ''
     if (m.metric_type === 'attempt') {
       const key = `${m.measured_on}|${m.skill_step_id}`
@@ -451,20 +507,19 @@ export async function getStudentDashboard(studentId: string): Promise<StudentDas
     .slice(0, 30)
 
   // ── 부모 피드백 초안(최근 한 달) ──
-  const presentN = (sessions ?? []).filter(s => s.attendance === '출석' || s.attendance === '지각').length
-  const absentN = (sessions ?? []).filter(s => s.attendance === '결석').length
-  const passLabels = (prog ?? []).filter(p => p.source !== 'baseline')
-    .sort((a, b) => (a.passed_at < b.passed_at ? 1 : -1))
-    .map(p => labelById.get(p.skill_step_id) ?? p.step_key_snapshot)
+  const recentPasses = (prog ?? []).filter(p => p.source !== 'baseline' && p.passed_at >= since)
+  const presentRecent = (sessions ?? []).filter(s => s.session_date >= since && (s.attendance === '출석' || s.attendance === '지각')).length
+  const absentRecent = (sessions ?? []).filter(s => s.session_date >= since && s.attendance === '결석').length
+  const passLabels = recentPasses.sort((a, b) => (a.passed_at < b.passed_at ? 1 : -1)).map(p => labelById.get(p.skill_step_id) ?? p.step_key_snapshot)
   const practiceFreq = new Map<string, number>()
-  for (const m of meas ?? []) if (m.metric_type === 'attempt') {
-    const l = labelById.get(m.skill_step_id); if (l) practiceFreq.set(l, (practiceFreq.get(l) ?? 0) + 1)
+  for (const m of meas ?? []) if (m.metric_type === 'attempt' && m.measured_on >= since) {
+    const l = labelById.get(m.skill_step_id ?? ''); if (l) practiceFreq.set(l, (practiceFreq.get(l) ?? 0) + 1)
   }
   const practiceTop = [...practiceFreq.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5).map(e => e[0])
   const progressLine = strokeProgress.filter(s => s.pct > 0).map(s => `${s.stroke_label} ${s.pct}%`).join(', ')
   const draft = [
     `[${student.name}] 최근 한 달 수영 리포트`,
-    `· 출석 ${presentN}회${absentN ? ` (결석 ${absentN}회)` : ''}`,
+    `· 출석 ${presentRecent}회${absentRecent ? ` (결석 ${absentRecent}회)` : ''}`,
     `· 이번 달 통과: ${passLabels.length ? passLabels.slice(0, 6).join(', ') : '없음'}`,
     practiceTop.length ? `· 주로 연습한 것: ${practiceTop.join(', ')}` : '',
     progressLine ? `· 현재 진도: ${progressLine}` : '',
@@ -474,7 +529,8 @@ export async function getStudentDashboard(studentId: string): Promise<StudentDas
   return {
     name: student.name, grade: student.grade, schedule: student.schedule, enrolled_on: student.enrolled_on,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    instructorName: (student as any).profiles?.name ?? null,
-    currentStepLabel, strokeProgress, dailyLog, feedbackDraft: draft,
+    sex: (student as any).sex ?? null, ageText: ageTextOf((student as any).birthdate ?? null),
+    instructorName,
+    currentStepLabel, strokeProgress, radar, stats, dailyLog, feedbackDraft: draft,
   }
 }

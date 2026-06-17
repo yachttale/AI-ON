@@ -1,6 +1,7 @@
 // lib/v2/today.ts — 오늘 학생 카드 모델(순수). 스케줄 필터는 lib/schedule 재사용.
 // 오늘 수업 학생을 '내 반(mine)' / '가져오기 가능(assignable: 미배정·타반)'으로 분리.
 import { getTodayEntries } from '@/lib/schedule'
+import { kstWeekday, kstHour } from './now'
 import { selectCardWindow, type StrokeLadderView, type LadderStepView } from './ladder'
 import type { Attendance, MetricType, StepKind } from '@/types/v2'
 
@@ -16,7 +17,7 @@ export function buildTodayCards(
   students: TodayStudent[],
   sessionById: Map<string, TodaySession>,
   currentUserId: string,
-  todayJsDay: number = new Date().getDay(),
+  todayJsDay: number = kstWeekday(),
 ): TodayBoards {
   const mine: TodayCard[] = []
   const assignable: TodayCard[] = []
@@ -55,7 +56,7 @@ export interface TodayCardView extends TodayCard {
 }
 
 // 학생의 오늘 첫(또는 유일) 수업 시간(24h). 그룹핑·정렬용.
-export function classHourFor(schedule: string | null, todayJsDay: number = new Date().getDay()): number | null {
+export function classHourFor(schedule: string | null, todayJsDay: number = kstWeekday()): number | null {
   if (!schedule) return null
   const entries = getTodayEntries(schedule, todayJsDay)
   if (entries.length === 0) return null
@@ -68,7 +69,7 @@ export function buildTodayCardView(
   strokes: StrokeLadderView[],
   todayRecordedIds: Set<string>,
   todayPassedIds: Set<string>,
-  todayJsDay: number = new Date().getDay(),
+  todayJsDay: number = kstWeekday(),
 ): TodayCardView {
   const { focus, steps } = selectCardWindow(strokes, { keepPassedIds: todayPassedIds })
   const chips: TodayChip[] = steps.map((s: LadderStepView) => ({
@@ -95,7 +96,7 @@ export function buildTodayCardView(
 
 // 수업 시간별 그룹. 현재 시간 이후(진행/예정)를 먼저, 지난 수업을 뒤로. 각 그룹 내 미입력 먼저.
 export interface HourGroup { hour: number | null; cards: TodayCardView[] }
-export function groupCardsByHour(cards: TodayCardView[], currentHour: number = new Date().getHours()): HourGroup[] {
+export function groupCardsByHour(cards: TodayCardView[], currentHour: number = kstHour()): HourGroup[] {
   const byHour = new Map<number | null, TodayCardView[]>()
   for (const c of cards) {
     const arr = byHour.get(c.classHour) ?? []

@@ -1,8 +1,9 @@
-// app/v2/student/[id]/page.tsx — 학생 대시보드(기본정보·진도%·최근30일)
+// app/v2/student/[id]/page.tsx — 학생 리포트 대시보드(레이더 + 지표 한눈에)
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { getStudentDashboard } from '@/lib/v2/data'
-import { strokeBadge } from '@/lib/v2/stroke-colors'
+import { relDayLabel } from '@/lib/v2/now'
+import { StrokeRadar } from './StrokeRadar'
 import { FeedbackDraft } from './FeedbackDraft'
 
 const KIND_STYLE: Record<string, string> = {
@@ -15,52 +16,62 @@ export default async function StudentDashboardPage({ params }: { params: Promise
   const { id } = await params
   const d = await getStudentDashboard(id)
   if (!d) notFound()
+  const km = (d.stats.totalDistanceM / 1000)
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-between items-center">
-        <h2 className="text-lg font-bold text-gray-800">{d.name}</h2>
-        <Link href={`/v2/student/${id}/progress`} className="text-xs text-white bg-blue-500 rounded px-3 py-1.5 font-semibold">진도 편집</Link>
-      </div>
-
-      <section className="bg-white rounded-xl border p-4 grid grid-cols-2 gap-y-2 text-sm">
-        <span className="text-gray-400">반</span><span>{d.schedule ?? '-'}</span>
-        <span className="text-gray-400">현재 단계</span><span>{d.currentStepLabel ?? '-'}</span>
-        <span className="text-gray-400">담당 강사</span><span>{d.instructorName ?? '-'}</span>
-        <span className="text-gray-400">입문일</span><span>{d.enrolled_on ?? '-'}</span>
-      </section>
-
-      <section className="bg-white rounded-xl border p-4 space-y-2">
-        <h3 className="font-semibold text-sm text-gray-700">진도 현황</h3>
-        {d.strokeProgress.filter(s => s.total > 0).map(s => {
-          const badge = strokeBadge(s.stroke_key)
-          return (
-            <div key={s.stroke_key} className="space-y-1">
-              <div className="flex justify-between text-xs">
-                <span>{s.stroke_label}</span>
-                <span className="text-gray-400">{s.passed}/{s.total} · {s.pct}%</span>
-              </div>
-              <div className="h-2 rounded bg-gray-100 overflow-hidden">
-                <div className={`h-full ${badge.bar}`} style={{ width: `${s.pct}%` }} />
-              </div>
+      {/* 프로필 헤더 */}
+      <section className="bg-white rounded-2xl border p-4">
+        <div className="flex items-start justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-14 h-14 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center text-xl font-bold">{d.name.slice(0, 1)}</div>
+            <div>
+              <p className="text-xl font-bold text-gray-900">{d.name}</p>
+              <p className="text-xs text-gray-500">{[d.sex, d.ageText, d.grade].filter(Boolean).join(' · ') || '정보 없음'}</p>
             </div>
-          )
-        })}
+          </div>
+          <Link href={`/v2/student/${id}/progress`} className="text-xs text-white bg-blue-500 rounded px-3 py-1.5 font-semibold shrink-0">진도 편집</Link>
+        </div>
+        <div className="grid grid-cols-2 gap-y-1.5 text-sm mt-4 pt-3 border-t">
+          <span className="text-gray-400">반</span><span>{d.schedule ?? '-'}</span>
+          <span className="text-gray-400">현재 단계</span><span>{d.currentStepLabel ?? '-'}</span>
+          <span className="text-gray-400">담당 강사</span><span>{d.instructorName ?? '미배정'}</span>
+          <span className="text-gray-400">입문일</span><span>{d.enrolled_on ?? '-'}</span>
+        </div>
       </section>
 
-      <section className="bg-white rounded-xl border p-4 space-y-2">
-        <h3 className="font-semibold text-sm text-gray-700">부모 피드백 초안</h3>
+      {/* 리포트: 레이더 + 지표 타일 */}
+      <section className="bg-white rounded-2xl border p-4 space-y-4">
+        <h3 className="font-bold text-sm text-gray-700">영법별 성취</h3>
+        {d.radar.length >= 3
+          ? <StrokeRadar data={d.radar} />
+          : <p className="text-xs text-gray-400 text-center py-6">진도 데이터가 쌓이면 레이더가 표시됩니다</p>}
+        <div className="grid grid-cols-3 gap-2 text-center">
+          <Tile label="총 기록 일수" value={`${d.stats.recordDays}`} unit="일" />
+          <Tile label="총 수영 거리" value={d.stats.totalDistanceM.toLocaleString()} unit="m" />
+          <Tile label="하루 평균" value={d.stats.avgDistanceM.toLocaleString()} unit="m" />
+          <Tile label="통과 단계" value={`${d.stats.totalPassed}`} unit="개" accent />
+          <Tile label="출석률" value={`${d.stats.attendanceRate}`} unit="%" />
+          <Tile label="즐겨한 영법" value={d.stats.favoriteStroke ?? '-'} />
+        </div>
+        {km >= 1 && <p className="text-[11px] text-gray-300 text-center">누적 {km.toLocaleString(undefined, { maximumFractionDigits: 1 })}km</p>}
+      </section>
+
+      {/* 부모 피드백 초안 */}
+      <section className="bg-white rounded-2xl border p-4 space-y-2">
+        <h3 className="font-bold text-sm text-gray-700">부모 피드백 초안</h3>
         <FeedbackDraft initial={d.feedbackDraft} />
       </section>
 
-      <section className="bg-white rounded-xl border p-4 space-y-3">
-        <h3 className="font-semibold text-sm text-gray-700">일별 활동 (최근 30일)</h3>
+      {/* 일별 활동 */}
+      <section className="bg-white rounded-2xl border p-4 space-y-3">
+        <h3 className="font-bold text-sm text-gray-700">일별 활동 (최근 30일)</h3>
         {d.dailyLog.length === 0
           ? <p className="text-xs text-gray-400">기록 없음</p>
           : <ul className="space-y-2.5">
               {d.dailyLog.map(day => (
                 <li key={day.date} className="flex gap-3">
-                  <span className="text-xs text-gray-400 tabular-nums shrink-0 w-12 pt-0.5">{day.date.slice(5)}</span>
+                  <span className="text-xs text-gray-500 font-medium shrink-0 w-12 pt-0.5">{relDayLabel(day.date)}</span>
                   <div className="flex flex-wrap gap-1">
                     {day.items.map((it, i) => (
                       <span key={i} className={`px-1.5 py-0.5 rounded text-xs ${KIND_STYLE[it.kind]}`}>{it.label}</span>
@@ -72,6 +83,17 @@ export default async function StudentDashboardPage({ params }: { params: Promise
       </section>
 
       <p className="text-center text-[11px] text-gray-300">성장 그래프는 데이터 누적 후 제공됩니다</p>
+    </div>
+  )
+}
+
+function Tile({ label, value, unit, accent }: { label: string; value: string; unit?: string; accent?: boolean }) {
+  return (
+    <div className="rounded-xl bg-gray-50 py-2.5 px-1">
+      <p className="text-[10px] text-gray-400 mb-0.5">{label}</p>
+      <p className={`font-bold leading-tight ${accent ? 'text-indigo-600' : 'text-gray-800'} ${value.length > 4 ? 'text-sm' : 'text-lg'}`}>
+        {value}{unit && <span className="text-[10px] font-normal text-gray-400 ml-0.5">{unit}</span>}
+      </p>
     </div>
   )
 }

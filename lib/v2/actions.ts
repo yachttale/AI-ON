@@ -2,6 +2,7 @@
 'use server'
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
+import { kstToday, kstWeekday } from '@/lib/v2/now'
 import type { Attendance, MetricType, Difficulty } from '@/types/v2'
 
 async function ctx() {
@@ -16,13 +17,13 @@ async function assertOwns(supabase: Awaited<ReturnType<typeof createClient>>, us
   if (prof?.role === 'director') return  // 원장도 수업 — 모든 학생 기록 가능
   const { data: s } = await supabase.from('students').select('instructor_id').eq('id', studentId).maybeSingle()
   if (s?.instructor_id === userId) return  // 고정 담당
-  const weekday = new Date().getDay()
+  const weekday = kstWeekday()
   const { data: a } = await supabase.from('student_day_instructors')
     .select('instructor_id').eq('student_id', studentId).eq('weekday', weekday).maybeSingle()
   if (a?.instructor_id === userId) return  // 오늘 요일 배정(오버라이드)
   throw new Error('Forbidden')
 }
-const today = () => new Date().toISOString().slice(0, 10)
+const today = kstToday
 
 // 당일 session 보장(없으면 출석 기본). session id 반환.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -40,7 +41,7 @@ async function ensureSession(supabase: any, userId: string, studentId: string): 
 // RPC가 RLS 우회, 항상 auth.uid()로 배정.
 export async function assignToMe(studentId: string) {
   const { supabase } = await ctx()
-  const weekday = new Date().getDay()  // 0=일 ~ 6=토
+  const weekday = kstWeekday()  // 0=일 ~ 6=토 (KST)
   const { error } = await supabase.rpc('assign_day_to_me', { p_student_id: studentId, p_weekday: weekday })
   if (error) throw error
   revalidatePath('/v2/today')
