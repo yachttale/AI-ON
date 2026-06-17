@@ -66,17 +66,28 @@ export async function recordMeasurement(m: Omit<Measurement, 'id' | 'created_at'
 export async function getTodayStudentsRaw(): Promise<{ students: TodayStudent[]; sessionById: Map<string, TodaySession> }> {
   const supabase = await createClient()
   const today = new Date().toISOString().slice(0, 10)
+  const weekday = new Date().getDay()  // 0=일 ~ 6=토
   const { data: rows, error } = await supabase
     .from('students')
-    .select('id,name,grade,schedule,instructor_id,profiles!instructor_id(name)')
+    .select('id,name,grade,schedule')
     .eq('is_active', true).order('name')
   if (error) throw error
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const students: TodayStudent[] = (rows ?? []).map((r: any) => ({
-    id: r.id, name: r.name, grade: r.grade, schedule: r.schedule,
-    instructor_id: r.instructor_id, instructor_name: r.profiles?.name ?? null,
-  }))
-  const ids = students.map(s => s.id)
+  const base = rows ?? []
+  const ids = base.map(s => s.id)
+  // 오늘 요일의 학생별 담당 강사(요일별 배정)
+  const dayAssign = new Map<string, { instructor_id: string; instructor_name: string | null }>()
+  if (ids.length) {
+    const { data: sdi } = await supabase
+      .from('student_day_instructors')
+      .select('student_id,instructor_id,profiles!instructor_id(name)')
+      .eq('weekday', weekday).in('student_id', ids)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    for (const a of (sdi ?? []) as any[]) dayAssign.set(a.student_id, { instructor_id: a.instructor_id, instructor_name: a.profiles?.name ?? null })
+  }
+  const students: TodayStudent[] = base.map(s => {
+    const a = dayAssign.get(s.id)
+    return { id: s.id, name: s.name, grade: s.grade, schedule: s.schedule, instructor_id: a?.instructor_id ?? null, instructor_name: a?.instructor_name ?? null }
+  })
   const sessionById = new Map<string, TodaySession>()
   if (ids.length) {
     const { data: sessions } = await supabase

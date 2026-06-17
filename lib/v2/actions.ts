@@ -28,10 +28,12 @@ async function ensureSession(supabase: any, userId: string, studentId: string): 
   return data.id
 }
 
-// 반배정 이동: 오늘 수업할 학생을 호출 강사 본인 반으로 (RPC가 RLS 우회, 항상 auth.uid()로 배정)
+// 반배정 이동: 오늘 요일에 한해 학생을 호출 강사 본인 반으로 (그 요일 고정·매주 반복).
+// RPC가 RLS 우회, 항상 auth.uid()로 배정.
 export async function assignToMe(studentId: string) {
   const { supabase } = await ctx()
-  const { error } = await supabase.rpc('assign_student_to_me', { p_student_id: studentId })
+  const weekday = new Date().getDay()  // 0=일 ~ 6=토
+  const { error } = await supabase.rpc('assign_day_to_me', { p_student_id: studentId, p_weekday: weekday })
   if (error) throw error
   revalidatePath('/v2/today')
 }

@@ -458,19 +458,40 @@ insert into skill_steps (curriculum_version_id,stroke_id,track_id,key,label,ladd
 insert into skill_steps (curriculum_version_id,stroke_id,track_id,key,label,ladder_order,is_first_completion,measure_spec,step_kind) select (select id from curriculum_versions where label='v1 - 2026 기본'), (select id from strokes where key='etc'), (select id from skill_tracks where key='submarine' and stroke_id=(select id from strokes where key='etc')), 'etc.submarine.4','20M',143,false, array[]::text[],'ladder';
 insert into skill_steps (curriculum_version_id,stroke_id,track_id,key,label,ladder_order,is_first_completion,measure_spec,step_kind) select (select id from curriculum_versions where label='v1 - 2026 기본'), (select id from strokes where key='etc'), (select id from skill_tracks where key='submarine' and stroke_id=(select id from strokes where key='etc')), 'etc.submarine.5','25M',144,false, array[]::text[],'counter';
 
--- ===== [4/4] 014_v2_assign.sql =====
--- 014_v2_assign.sql — 강사 반배정 이동 RPC
--- 요일별로 다른 강사가 그날 학생을 자기 반으로 가져와 수업하는 흐름 지원.
--- RLS상 강사는 자기 반 학생만 update 가능 → SECURITY DEFINER로 우회하되, 항상 호출자(auth.uid())로만 배정.
-create or replace function public.assign_student_to_me(p_student_id uuid)
+-- ===== [4/4] 014_v2_assign.sql (요일별 배정) =====
+-- 014_v2_assign.sql — 요일별 강사 배정
+-- 주2회+ 학생은 요일마다 담당 강사가 다를 수 있음. 한 번 배정하면 그 요일은 고정(매주 반복).
+-- 반 변경 시엔 다른 강사가 그 요일을 가져가면 담당 이전.
+
+-- (옛 단일 배정 RPC가 있으면 정리)
+drop function if exists public.assign_student_to_me(uuid);
+
+create table if not exists public.student_day_instructors (
+  id uuid primary key default gen_random_uuid(),
+  student_id uuid not null references public.students(id) on delete cascade,
+  weekday smallint not null check (weekday between 0 and 6),  -- 0=일 ~ 6=토 (JS getDay 기준)
+  instructor_id uuid not null references public.profiles(id),
+  created_at timestamptz default now() not null,
+  unique (student_id, weekday)
+);
+create index if not exists idx_sdi_instructor_weekday on public.student_day_instructors(instructor_id, weekday);
+
+alter table public.student_day_instructors enable row level security;
+drop policy if exists "요일배정 조회" on public.student_day_instructors;
+create policy "요일배정 조회" on public.student_day_instructors for select to authenticated using (true);
+
+-- 가져오기: 오늘 요일 배정을 호출 강사 본인으로 upsert (RLS 우회, 항상 auth.uid())
+create or replace function public.assign_day_to_me(p_student_id uuid, p_weekday smallint)
 returns void
 language plpgsql
 security definer
 set search_path = public
 as $$
 begin
-  update public.students set instructor_id = auth.uid() where id = p_student_id;
+  insert into public.student_day_instructors (student_id, weekday, instructor_id)
+  values (p_student_id, p_weekday, auth.uid())
+  on conflict (student_id, weekday) do update set instructor_id = excluded.instructor_id;
 end;
 $$;
 
-grant execute on function public.assign_student_to_me(uuid) to authenticated;
+grant execute on function public.assign_day_to_me(uuid, smallint) to authenticated;
