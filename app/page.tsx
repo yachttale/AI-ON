@@ -7,12 +7,6 @@ export default async function RootPage() {
 
   if (!user) redirect('/login')
 
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('role')
-    .eq('id', user.id)
-    .single()
-
-  if (profile?.role === 'director') redirect('/director/dashboard')
-  redirect('/instructor/today')
+  // v2 메인 — 강사·원장 모두 오늘 수업 화면으로 (원장도 수업)
+  redirect('/v2/today')
 }
