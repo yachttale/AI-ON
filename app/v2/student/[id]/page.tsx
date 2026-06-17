@@ -3,6 +3,13 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { getStudentDashboard } from '@/lib/v2/data'
 import { strokeBadge } from '@/lib/v2/stroke-colors'
+import { FeedbackDraft } from './FeedbackDraft'
+
+const KIND_STYLE: Record<string, string> = {
+  pass: 'bg-blue-100 text-blue-700',
+  measure: 'bg-amber-100 text-amber-700',
+  practice: 'bg-gray-100 text-gray-600',
+}
 
 export default async function StudentDashboardPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -42,20 +49,29 @@ export default async function StudentDashboardPage({ params }: { params: Promise
       </section>
 
       <section className="bg-white rounded-xl border p-4 space-y-2">
-        <h3 className="font-semibold text-sm text-gray-700">최근 30일 기록</h3>
-        {d.recent.length === 0
+        <h3 className="font-semibold text-sm text-gray-700">부모 피드백 초안</h3>
+        <FeedbackDraft initial={d.feedbackDraft} />
+      </section>
+
+      <section className="bg-white rounded-xl border p-4 space-y-3">
+        <h3 className="font-semibold text-sm text-gray-700">일별 활동 (최근 30일)</h3>
+        {d.dailyLog.length === 0
           ? <p className="text-xs text-gray-400">기록 없음</p>
-          : <ul className="space-y-1 text-sm">
-              {d.recent.map((r, i) => (
-                <li key={i} className="flex gap-2">
-                  <span className="text-gray-400 tabular-nums shrink-0">{r.date.slice(5)}</span>
-                  <span className={r.kind === 'passed' ? 'text-blue-600' : 'text-gray-700'}>{r.label}</span>
+          : <ul className="space-y-2.5">
+              {d.dailyLog.map(day => (
+                <li key={day.date} className="flex gap-3">
+                  <span className="text-xs text-gray-400 tabular-nums shrink-0 w-12 pt-0.5">{day.date.slice(5)}</span>
+                  <div className="flex flex-wrap gap-1">
+                    {day.items.map((it, i) => (
+                      <span key={i} className={`px-1.5 py-0.5 rounded text-xs ${KIND_STYLE[it.kind]}`}>{it.label}</span>
+                    ))}
+                  </div>
                 </li>
               ))}
             </ul>}
       </section>
 
-      <p className="text-center text-[11px] text-gray-300">성장 그래프·AI 리포트는 데이터 누적 후 제공됩니다</p>
+      <p className="text-center text-[11px] text-gray-300">성장 그래프는 데이터 누적 후 제공됩니다</p>
     </div>
   )
 }

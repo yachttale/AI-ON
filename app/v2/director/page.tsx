@@ -26,6 +26,13 @@ export default async function DirectorPage() {
         <Stat label="강사" value={d.totalInstructors} unit="명" />
       </div>
 
+      {/* 전체 학생 명단 진입 */}
+      <Link href="/v2/director/students"
+        className="flex items-center justify-between bg-blue-500 text-white rounded-xl px-4 py-3 font-semibold">
+        <span>전체 학생 명단 · 검색</span>
+        <span className="text-sm opacity-90">{d.totalStudents}명 →</span>
+      </Link>
+
       {/* 운영 요약 */}
       <div className="grid grid-cols-3 gap-3">
         <Stat label="오늘 결석" value={d.todayAbsent} unit="명" />

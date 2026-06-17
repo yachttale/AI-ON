@@ -30,8 +30,8 @@ export default async function TodayPage() {
   const groups = groupCardsByHour(cards)
   const todoCount = cards.filter(c => !c.recordedToday && !c.absent).length
 
+  // 오늘 수업엔 '내 반 + 미배정'만. 다른 반(배정된) 아이들은 숨김.
   const unassigned = assignable.filter(c => !c.instructor_id)
-  const otherClass = assignable.filter(c => c.instructor_id)
 
   return (
     <div className="space-y-5">
@@ -63,12 +63,6 @@ export default async function TodayPage() {
         </section>
       )}
 
-      {otherClass.length > 0 && (
-        <section className="space-y-2">
-          <h3 className="text-sm font-semibold text-gray-500">다른 반 · 가져오기 <span className="text-gray-400 font-normal">({otherClass.length})</span></h3>
-          {otherClass.map(c => <AssignableCardItem key={c.id} card={c} />)}
-        </section>
-      )}
     </div>
   )
 }
