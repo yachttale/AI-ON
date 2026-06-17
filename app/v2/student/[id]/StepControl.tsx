@@ -1,7 +1,7 @@
 // app/v2/student/[id]/StepControl.tsx — step_kind 분기 입력 섬
 'use client'
 import { useState, useTransition } from 'react'
-import { passStepAction, passLadderCascade, addAttempt, completeCounter, logRepeatable } from '@/lib/v2/actions'
+import { passLadderCascade, toggleSingleCheck, addAttempt, completeCounter, logRepeatable } from '@/lib/v2/actions'
 import type { LadderStepView } from '@/lib/v2/ladder'
 
 export function StepControl({ studentId, step }: { studentId: string; step: LadderStepView }) {
@@ -27,12 +27,13 @@ export function StepControl({ studentId, step }: { studentId: string; step: Ladd
     )
   }
   if (step.step_kind === 'single') {
-    // 개별 통과(구르기 등) — cascade 없음, 측정 없음
+    // 개별 체크(구르기·물대포) — 진도 사다리와 무관한 물 적응 지표. 체크/해제 토글.
     return (
-      <div className="flex items-center gap-2 py-1">
-        <span className={`flex-1 text-sm ${step.passed ? 'text-gray-400 line-through' : ''}`}>{step.label}{step.passSource === 'baseline' && <em className="ml-1 text-[10px] text-gray-400">기준</em>}</span>
-        {!step.passed && <button disabled={pending} onClick={() => start(() => passStepAction(studentId, snap))} className="px-3 py-1 rounded bg-blue-500 text-white text-xs">통과</button>}
-      </div>
+      <button disabled={pending} onClick={() => start(() => toggleSingleCheck(studentId, snap, step.passed))}
+        className="flex items-center gap-2 py-1 w-full text-left disabled:opacity-60">
+        <span className={`w-5 h-5 rounded border flex items-center justify-center text-xs shrink-0 ${step.passed ? 'bg-green-500 border-green-500 text-white' : 'border-gray-300 text-transparent'}`}>✓</span>
+        <span className={`text-sm ${step.passed ? 'text-gray-700 font-medium' : 'text-gray-500'}`}>{step.label}</span>
+      </button>
     )
   }
   if (step.step_kind === 'repeatable') {

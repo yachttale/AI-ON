@@ -113,6 +113,23 @@ export async function addAttempt(studentId: string, stepId: string) {
   revalidatePath(`/v2/student/${studentId}`)
 }
 
+// 개별 체크(구르기·물대포 등) 토글 — 진도 사다리와 무관한 물 적응 지표. 체크/해제 자유.
+export async function toggleSingleCheck(studentId: string, step: { id: string; key: string; ladder_order: number }, checked: boolean) {
+  const { supabase, userId } = await ctx(); await assertOwns(supabase, userId, studentId)
+  if (checked) {
+    const { error } = await supabase.from('skill_progress').delete().eq('student_id', studentId).eq('skill_step_id', step.id)
+    if (error) throw error
+  } else {
+    const sessionId = await ensureSession(supabase, userId, studentId)
+    const { error } = await supabase.from('skill_progress').insert({
+      student_id: studentId, skill_step_id: step.id, source: 'observed', instructor_id: userId,
+      source_session_id: sessionId, step_key_snapshot: step.key, ladder_order_snapshot: step.ladder_order,
+    })
+    if (error && !String(error.message).includes('duplicate')) throw error
+  }
+  revalidatePath(`/v2/student/${studentId}`)
+}
+
 export async function completeCounter(studentId: string, step: { id: string; key: string; ladder_order: number }, difficulty?: Difficulty) {
   await passStepAction(studentId, step, { difficulty })
 }
