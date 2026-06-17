@@ -70,7 +70,62 @@ export async function passStepAction(studentId: string, step: { id: string; key:
   for (const m of opts.measures ?? []) {
     await supabase.from('measurements').insert({ student_id: studentId, metric_type: m.metric, value: m.value, measured_on: today(), session_id: sessionId, skill_step_id: step.id, instructor_id: userId })
   }
-  revalidatePath(`/v2/student/${studentId}`)
+  revalidatePath('/v2/today'); revalidatePath(`/v2/student/${studentId}`)
+}
+
+// 오늘 카드 칩 탭 = "오늘 했음" 토글. 오늘자 attempt 행이 있으면 취소(삭제), 없으면 1건 기록.
+// (통과/사다리 진행과 분리 — 탭해도 카드/칩 안 사라짐.)
+export async function recordStepToday(studentId: string, stepId: string) {
+  const { supabase, userId } = await ctx(); await assertOwns(supabase, userId, studentId)
+  const sessionId = await ensureSession(supabase, userId, studentId)
+  const { data: existing } = await supabase.from('measurements').select('id')
+    .eq('student_id', studentId).eq('skill_step_id', stepId).eq('metric_type', 'attempt').eq('measured_on', today())
+  if (existing && existing.length > 0) {
+    const { error } = await supabase.from('measurements').delete()
+      .eq('student_id', studentId).eq('skill_step_id', stepId).eq('metric_type', 'attempt').eq('measured_on', today())
+    if (error) throw error
+  } else {
+    const { error } = await supabase.from('measurements').insert({
+      student_id: studentId, metric_type: 'attempt', value: 1, measured_on: today(), session_id: sessionId, skill_step_id: stepId, instructor_id: userId,
+    })
+    if (error) throw error
+  }
+  revalidatePath('/v2/today')
+}
+
+// 측정 스텝 입력(초/스트로크/바퀴) — append. 오늘 카드/진도 양쪽 반영.
+export async function recordMeasureToday(studentId: string, stepId: string, metric: MetricType, value: number) {
+  const { supabase, userId } = await ctx(); await assertOwns(supabase, userId, studentId)
+  const sessionId = await ensureSession(supabase, userId, studentId)
+  const { error } = await supabase.from('measurements').insert({
+    student_id: studentId, metric_type: metric, value, measured_on: today(), session_id: sessionId, skill_step_id: stepId, instructor_id: userId,
+  })
+  if (error) throw error
+  revalidatePath('/v2/today'); revalidatePath(`/v2/student/${studentId}`)
+}
+
+// 휴원일 토글(원장 전용): 오늘을 휴원일로 지정/해제. 결석과 무관 — 그 날 수업 자체가 없음.
+export async function setClosureToday(closed: boolean) {
+  const { supabase, userId } = await ctx()
+  const { data: profile } = await supabase.from('profiles').select('role').eq('id', userId).single()
+  if (profile?.role !== 'director') throw new Error('Forbidden')
+  if (closed) {
+    const { error } = await supabase.from('studio_closures').upsert({ closed_on: today(), created_by: userId }, { onConflict: 'closed_on' })
+    if (error) throw error
+  } else {
+    const { error } = await supabase.from('studio_closures').delete().eq('closed_on', today())
+    if (error) throw error
+  }
+  revalidatePath('/v2/today'); revalidatePath('/v2/director')
+}
+
+// 결석 토글: 켜면 attendance='결석', 끄면 '출석'(출석은 암묵 기본).
+export async function markAbsent(studentId: string, absent: boolean) {
+  const { supabase, userId } = await ctx(); await assertOwns(supabase, userId, studentId)
+  const { error } = await supabase.from('sessions')
+    .upsert({ student_id: studentId, instructor_id: userId, session_date: today(), attendance: absent ? '결석' : '출석' }, { onConflict: 'student_id,session_date' })
+  if (error) throw error
+  revalidatePath('/v2/today')
 }
 
 export async function addAttempt(studentId: string, stepId: string) {
