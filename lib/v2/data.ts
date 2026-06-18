@@ -201,13 +201,13 @@ export async function getDashboardRaw(): Promise<{
   const { data: version } = await supabase
     .from('curriculum_versions').select('id').eq('status', 'active').single()
 
-  let allSteps: { id: string; stroke_key: string; ladder_order: number }[] = []
+  let allSteps: { id: string; stroke_key: string; ladder_order: number; step_kind: string }[] = []
   let strokeMeta: { key: string; label: string }[] = []
 
   if (version) {
     const { data: stepRows } = await supabase
       .from('skill_steps')
-      .select('id,ladder_order,strokes(key,label,display_order)')
+      .select('id,ladder_order,step_kind,strokes(key,label,display_order)')
       .eq('curriculum_version_id', version.id).eq('is_active', true)
       .order('ladder_order', { ascending: true })
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -215,6 +215,7 @@ export async function getDashboardRaw(): Promise<{
       id: r.id,
       stroke_key: r.strokes?.key ?? '',
       ladder_order: r.ladder_order,
+      step_kind: r.step_kind ?? '',
     }))
     // strokeMeta: 영법별 고유 목록, display_order 기준 정렬
     const strokeMap = new Map<string, { label: string; display_order: number }>()
@@ -251,7 +252,7 @@ export async function getDashboardRaw(): Promise<{
   // 4) 각 학생 현재 영법 인메모리 계산 (첫 미통과 단계의 stroke_key)
   const students = baseStudents.map(s => {
     const passed = passedByStudent.get(s.id) ?? new Set()
-    const currentStep = allSteps.find(step => !passed.has(step.id))
+    const currentStep = allSteps.find(step => step.step_kind === 'ladder' && !passed.has(step.id))
     return { id: s.id, name: s.name, currentStrokeKey: currentStep?.stroke_key ?? null }
   })
 
