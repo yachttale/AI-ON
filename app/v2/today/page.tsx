@@ -1,10 +1,30 @@
 // app/v2/today/page.tsx — 오늘 수업 서버 페이지 (내 반 + 가져오기)
+import { Suspense } from 'react'
 import { createClient } from '@/lib/supabase/server'
 import { getTodayStudentsRaw } from '@/lib/v2/data'
 import { buildTodayCards } from '@/lib/v2/today'
 import { TodayCardItem, AssignableCardItem } from './parts'
 
-export default async function TodayPage() {
+function TodaySkeleton() {
+  return (
+    <div className="space-y-5 animate-pulse">
+      <section className="space-y-3">
+        <div className="h-6 bg-gray-200 rounded w-32" />
+        {[...Array(3)].map((_, i) => (
+          <div key={i} className="bg-white rounded-xl border p-4 flex justify-between items-center">
+            <div className="space-y-2">
+              <div className="h-4 bg-gray-200 rounded w-20" />
+              <div className="h-3 bg-gray-100 rounded w-14" />
+            </div>
+            <div className="h-7 bg-gray-200 rounded w-16" />
+          </div>
+        ))}
+      </section>
+    </div>
+  )
+}
+
+async function TodayContent() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   const { students, sessionById, reportedStepById } = await getTodayStudentsRaw()
@@ -35,5 +55,13 @@ export default async function TodayPage() {
         </section>
       )}
     </div>
+  )
+}
+
+export default function TodayPage() {
+  return (
+    <Suspense fallback={<TodaySkeleton />}>
+      <TodayContent />
+    </Suspense>
   )
 }

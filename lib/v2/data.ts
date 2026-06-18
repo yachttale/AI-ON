@@ -1,27 +1,78 @@
 // lib/v2/data.ts — v2 서버 데이터 접근 레이어
-import { createClient } from '@/lib/supabase/server'
+import { cache } from 'react'
+import { unstable_cache } from 'next/cache'
+import { createClient } from '@supabase/supabase-js'
+import { createClient as createServerClient } from '@/lib/supabase/server'
 import type { SkillStep, SkillProgress, Measurement, ProgressSource } from '@/types/v2'
 import type { TodayStudent, TodaySession } from './today'
 import { buildStrokeLadders, type LadderInputStep, type StrokeLadderView } from './ladder'
 import type { DashboardInput } from './dashboard'
 
+// 쿠키 없는 Supabase 클라이언트 (커리큘럼 읽기 전용, RLS 미적용)
+function createAnonClient() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+  )
+}
+
+// 활성 커리큘럼 전체 단계 조회 — unstable_cache로 cross-request 캐싱 (쿠키 없는 클라이언트)
+const _fetchCurriculumSteps = unstable_cache(
+  async (): Promise<SkillStep[]> => {
+    const supabase = createAnonClient()
+    const { data: version } = await supabase
+      .from('curriculum_versions').select('id').eq('status', 'active').single()
+    if (!version) return []
+    const { data, error } = await supabase
+      .from('skill_steps').select('*')
+      .eq('curriculum_version_id', version.id).eq('is_active', true)
+      .order('ladder_order', { ascending: true })
+    if (error) throw error
+    return (data ?? []) as SkillStep[]
+  },
+  ['active-curriculum-steps'],
+  { tags: ['curriculum'], revalidate: 3600 },
+)
+
+// React cache()로 요청 내 중복 호출 제거 (unstable_cache 위에 추가 레이어)
+export const getCachedActiveSteps = cache(_fetchCurriculumSteps)
+
 // 활성 커리큘럼의 단계 목록(영법·순서)
 export async function getActiveCurriculumSteps(): Promise<SkillStep[]> {
-  const supabase = await createClient()
-  const { data: version } = await supabase
-    .from('curriculum_versions').select('id').eq('status', 'active').single()
-  if (!version) return []
-  const { data, error } = await supabase
-    .from('skill_steps').select('*')
-    .eq('curriculum_version_id', version.id).eq('is_active', true)
-    .order('ladder_order', { ascending: true })
-  if (error) throw error
-  return (data ?? []) as SkillStep[]
+  return getCachedActiveSteps()
 }
+
+// getStrokeLadders용: 활성 커리큘럼 단계(LadderInputStep 형태) 캐시 조회
+const _fetchLadderSteps = unstable_cache(
+  async (): Promise<LadderInputStep[]> => {
+    const supabase = createAnonClient()
+    const { data: version } = await supabase
+      .from('curriculum_versions').select('id').eq('status', 'active').single()
+    if (!version) return []
+    const { data: rows, error } = await supabase
+      .from('skill_steps')
+      .select('id,key,label,ladder_order,step_kind,measure_spec,is_first_completion,strokes(key,label,color,display_order),skill_tracks(key,label,display_order)')
+      .eq('curriculum_version_id', version.id).eq('is_active', true)
+      .order('ladder_order', { ascending: true })
+    if (error) throw error
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return (rows ?? []).map((r: any) => ({
+      id: r.id, stroke_key: r.strokes.key, stroke_label: r.strokes.label, color: r.strokes.color,
+      track_key: r.skill_tracks?.key ?? '', track_label: r.skill_tracks?.label ?? '',
+      key: r.key, label: r.label, ladder_order: r.ladder_order,
+      step_kind: r.step_kind, measure_spec: r.measure_spec ?? [], is_first_completion: r.is_first_completion,
+    }))
+  },
+  ['active-ladder-steps'],
+  { tags: ['curriculum'], revalidate: 3600 },
+)
+
+// React cache()로 요청 내 중복 제거
+const getCachedLadderSteps = cache(_fetchLadderSteps)
 
 // 학생이 통과한 step_id 집합
 export async function getStudentPassedStepIds(studentId: string): Promise<Set<string>> {
-  const supabase = await createClient()
+  const supabase = await createServerClient()
   const { data, error } = await supabase
     .from('skill_progress').select('skill_step_id').eq('student_id', studentId)
   if (error) throw error
@@ -41,7 +92,7 @@ export async function passStep(args: {
   studentId: string; step: SkillStep; difficulty?: SkillProgress['difficulty']
   sourceSessionId?: string | null; instructorId?: string | null; note?: string | null
 }): Promise<void> {
-  const supabase = await createClient()
+  const supabase = await createServerClient()
   const { error } = await supabase.from('skill_progress').insert({
     student_id: args.studentId,
     skill_step_id: args.step.id,
@@ -57,7 +108,7 @@ export async function passStep(args: {
 
 // 측정값 기록(데일리 바퀴수 / 완주 시간·스트로크 공용)
 export async function recordMeasurement(m: Omit<Measurement, 'id' | 'created_at'>): Promise<void> {
-  const supabase = await createClient()
+  const supabase = await createServerClient()
   const { error } = await supabase.from('measurements').insert(m)
   if (error) throw error
 }
@@ -69,7 +120,7 @@ export async function getTodayStudentsRaw(): Promise<{
   sessionById: Map<string, TodaySession>
   reportedStepById: Map<string, { id: string; key: string; ladder_order: number; stroke_key: string; label: string }>
 }> {
-  const supabase = await createClient()
+  const supabase = await createServerClient()
   const today = new Date().toISOString().slice(0, 10)
   const weekday = new Date().getDay()  // 0=일 ~ 6=토
   const { data: rows, error } = await supabase
@@ -143,22 +194,10 @@ export async function getTodayStudentsRaw(): Promise<{
 
 // 학생 영법별 사다리 뷰(통과·source·연습횟수 반영)
 export async function getStrokeLadders(studentId: string): Promise<StrokeLadderView[]> {
-  const supabase = await createClient()
-  const { data: version } = await supabase.from('curriculum_versions').select('id').eq('status', 'active').single()
-  if (!version) return []
-  const { data: rows, error } = await supabase
-    .from('skill_steps')
-    .select('id,key,label,ladder_order,step_kind,measure_spec,is_first_completion,strokes(key,label,color,display_order),skill_tracks(key,label,display_order)')
-    .eq('curriculum_version_id', version.id).eq('is_active', true)
-    .order('ladder_order', { ascending: true })
-  if (error) throw error
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const steps: LadderInputStep[] = (rows ?? []).map((r: any) => ({
-    id: r.id, stroke_key: r.strokes.key, stroke_label: r.strokes.label, color: r.strokes.color,
-    track_key: r.skill_tracks?.key ?? '', track_label: r.skill_tracks?.label ?? '',
-    key: r.key, label: r.label, ladder_order: r.ladder_order,
-    step_kind: r.step_kind, measure_spec: r.measure_spec ?? [], is_first_completion: r.is_first_completion,
-  }))
+  const supabase = await createServerClient()
+  // 커리큘럼 단계는 캐시(cross-request + request-scoped)에서 가져옴
+  const steps = await getCachedLadderSteps()
+  if (steps.length === 0) return []
   const [{ data: prog }, { data: att }] = await Promise.all([
     supabase.from('skill_progress').select('skill_step_id,source').eq('student_id', studentId),
     supabase.from('measurements').select('skill_step_id').eq('student_id', studentId).eq('metric_type', 'attempt'),
@@ -172,7 +211,7 @@ export async function getStrokeLadders(studentId: string): Promise<StrokeLadderV
 
 // 키오스크: 강사 담당 활성 학생 + 오늘 입력 완료(session 존재) 여부
 export async function getKioskRosterRaw(instructorId: string): Promise<{ students: TodayStudent[]; doneIds: Set<string> }> {
-  const supabase = await createClient()
+  const supabase = await createServerClient()
   const today = new Date().toISOString().slice(0, 10)
   const { data: rows } = await supabase.from('students')
     .select('id,name,grade,schedule,instructor_id').eq('is_active', true).eq('instructor_id', instructorId).order('name')
@@ -194,7 +233,7 @@ export async function getDashboardRaw(): Promise<{
   input: DashboardInput
   strokeMeta: { key: string; label: string }[]
 }> {
-  const supabase = await createClient()
+  const supabase = await createServerClient()
   const today = new Date().toISOString().slice(0, 10)
 
   // 1) 활성 커리큘럼 버전 + 단계 + 영법(표시 순서 포함) 일괄 조회
