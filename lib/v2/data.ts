@@ -61,9 +61,13 @@ export async function recordMeasurement(m: Omit<Measurement, 'id' | 'created_at'
   if (error) throw error
 }
 
-// 오늘 수업: 전체 활성 학생(담당 강사명 포함) + 당일 출결/바퀴수.
+// 오늘 수업: 전체 활성 학생(담당 강사명 포함) + 당일 출결/바퀴수 + 아이 입력 상태.
 // 내 반/가져오기 구분은 buildTodayCards가 currentUserId로 수행(요일별 다른 강사 지원).
-export async function getTodayStudentsRaw(): Promise<{ students: TodayStudent[]; sessionById: Map<string, TodaySession> }> {
+export async function getTodayStudentsRaw(): Promise<{
+  students: TodayStudent[]
+  sessionById: Map<string, TodaySession>
+  reportedStepById: Map<string, { id: string; key: string; ladder_order: number; stroke_key: string; label: string }>
+}> {
   const supabase = await createClient()
   const today = new Date().toISOString().slice(0, 10)
   const weekday = new Date().getDay()  // 0=일 ~ 6=토
@@ -89,18 +93,51 @@ export async function getTodayStudentsRaw(): Promise<{ students: TodayStudent[];
     return { id: s.id, name: s.name, grade: s.grade, schedule: s.schedule, instructor_id: a?.instructor_id ?? null, instructor_name: a?.instructor_name ?? null }
   })
   const sessionById = new Map<string, TodaySession>()
+  const reportedStepById = new Map<string, { id: string; key: string; ladder_order: number; stroke_key: string; label: string }>()
   if (ids.length) {
     const { data: sessions } = await supabase
-      .from('sessions').select('student_id,attendance').eq('session_date', today).in('student_id', ids)
+      .from('sessions')
+      .select('student_id,attendance,status,input_source,reported_step_id')
+      .eq('session_date', today).in('student_id', ids)
     const { data: laps } = await supabase
       .from('measurements').select('student_id,value').eq('metric_type', 'laps').is('skill_step_id', null)
       .eq('measured_on', today).in('student_id', ids)
     const lapByStudent = new Map<string, number>()
     for (const l of laps ?? []) lapByStudent.set(l.student_id, Number(l.value))
-    for (const s of sessions ?? []) sessionById.set(s.student_id, { attendance: s.attendance, laps: lapByStudent.get(s.student_id) ?? null })
-    for (const [sid, v] of lapByStudent) if (!sessionById.has(sid)) sessionById.set(sid, { attendance: null, laps: v })
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    for (const s of (sessions ?? []) as any[]) {
+      sessionById.set(s.student_id, {
+        attendance: s.attendance,
+        laps: lapByStudent.get(s.student_id) ?? null,
+        status: s.status ?? null,
+        inputSource: s.input_source ?? null,
+        reportedStepId: s.reported_step_id ?? null,
+      })
+    }
+    for (const [sid, v] of lapByStudent) {
+      if (!sessionById.has(sid)) sessionById.set(sid, { attendance: null, laps: v, status: null, inputSource: null, reportedStepId: null })
+    }
+    // 보고단계 전체 정보 일괄 조회 (reported_step_id → skill_steps + strokes)
+    const reportedStepIds = [...sessionById.values()]
+      .map(s => s.reportedStepId).filter((id): id is string => id != null)
+    if (reportedStepIds.length) {
+      const { data: stepRows } = await supabase
+        .from('skill_steps')
+        .select('id,key,label,ladder_order,strokes(key)')
+        .in('id', reportedStepIds)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      for (const r of (stepRows ?? []) as any[]) {
+        reportedStepById.set(r.id, {
+          id: r.id,
+          key: r.key,
+          label: r.label,
+          ladder_order: r.ladder_order,
+          stroke_key: r.strokes?.key ?? '',
+        })
+      }
+    }
   }
-  return { students, sessionById }
+  return { students, sessionById, reportedStepById }
 }
 
 // 학생 영법별 사다리 뷰(통과·source·연습횟수 반영)

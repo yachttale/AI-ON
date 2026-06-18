@@ -7,8 +7,8 @@ import { TodayCardItem, AssignableCardItem } from './parts'
 export default async function TodayPage() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
-  const { students, sessionById } = await getTodayStudentsRaw()
-  const { mine, assignable } = buildTodayCards(students, sessionById, user!.id)
+  const { students, sessionById, reportedStepById } = await getTodayStudentsRaw()
+  const { mine, assignable } = buildTodayCards(students, sessionById, user!.id, undefined, reportedStepById)
   const unassigned = assignable.filter(c => !c.instructor_id)   // 오늘 수업인데 담당 없음
   const otherClass = assignable.filter(c => c.instructor_id)    // 오늘 수업인데 다른 강사 반
   return (

@@ -175,6 +175,22 @@ export async function setBaseline(studentId: string, stepIds: string[], snapshot
   revalidatePath(`/v2/student/${studentId}`)
 }
 
+// 당일 session 확정: status='confirmed', confirmed_by=userId, confirmed_at=now.
+export async function confirmSession(studentId: string) {
+  const { supabase, userId } = await ctx(); await assertOwns(supabase, userId, studentId)
+  const { error } = await supabase.from('sessions')
+    .update({ status: 'confirmed', confirmed_by: userId, confirmed_at: new Date().toISOString() })
+    .eq('student_id', studentId).eq('session_date', today())
+  if (error) throw error
+  revalidatePath('/v2/today')
+}
+
+// 아이가 보고한 단계를 통과로 인정(계단식) + 확정. 강사 한 탭.
+export async function acceptReportedStep(studentId: string, step: { id: string; key: string; ladder_order: number; stroke_key: string }) {
+  await passLadderCascade(studentId, step)  // skill_progress(observed) 적재
+  await confirmSession(studentId)
+}
+
 // 아이 패드 입력: 출석(자동) + 오늘 한 단계(보고) + 바퀴수. 통과 판정 없음(강사 확인 단계에서).
 export async function childReportActivity(studentId: string, reportedStepId: string | null, laps: number | null) {
   const { supabase, userId } = await ctx(); await assertOwns(supabase, userId, studentId)
