@@ -1,0 +1,12 @@
+{
+  "name": "스타키즈 수영 진도",
+  "short_name": "스타키즈",
+  "start_url": "/v2/today",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f0f9ff",
+  "theme_color": "#0ea5e9",
+  "icons": [
+    { "src": "/favicon.ico", "sizes": "any", "type": "image/x-icon" }
+  ]
+}

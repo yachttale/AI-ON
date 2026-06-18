@@ -7,7 +7,12 @@ const geist = Geist({ subsets: ['latin'] })
 export const metadata: Metadata = {
   title: '스타키즈 수영',
   description: '스타키즈 수영 진도 관리 시스템',
-  manifest: '/manifest.json',
+  manifest: '/manifest.webmanifest',
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'default',
+    title: '스타키즈',
+  },
 }
 
 export const viewport: Viewport = {
