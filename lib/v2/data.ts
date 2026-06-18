@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import type { SkillStep, SkillProgress, Measurement, ProgressSource } from '@/types/v2'
 import type { TodayStudent, TodaySession } from './today'
 import { buildStrokeLadders, type LadderInputStep, type StrokeLadderView } from './ladder'
+import type { DashboardInput } from './dashboard'
 
 // 활성 커리큘럼의 단계 목록(영법·순서)
 export async function getActiveCurriculumSteps(): Promise<SkillStep[]> {
@@ -185,4 +186,96 @@ export async function getKioskRosterRaw(instructorId: string): Promise<{ student
     for (const s of sess ?? []) doneIds.add(s.student_id)
   }
   return { students, doneIds }
+}
+
+// 원장 대시보드 원시 데이터: 활성 학생 현재 영법 + 미확인 수 + 최근 통과 이력 + strokeMeta
+// N+1 방지: 커리큘럼 단계 1회 조회 후 인메모리에서 각 학생 현재 단계 계산
+export async function getDashboardRaw(): Promise<{
+  input: DashboardInput
+  strokeMeta: { key: string; label: string }[]
+}> {
+  const supabase = await createClient()
+  const today = new Date().toISOString().slice(0, 10)
+
+  // 1) 활성 커리큘럼 버전 + 단계 + 영법(표시 순서 포함) 일괄 조회
+  const { data: version } = await supabase
+    .from('curriculum_versions').select('id').eq('status', 'active').single()
+
+  let allSteps: { id: string; stroke_key: string; ladder_order: number }[] = []
+  let strokeMeta: { key: string; label: string }[] = []
+
+  if (version) {
+    const { data: stepRows } = await supabase
+      .from('skill_steps')
+      .select('id,ladder_order,strokes(key,label,display_order)')
+      .eq('curriculum_version_id', version.id).eq('is_active', true)
+      .order('ladder_order', { ascending: true })
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    allSteps = (stepRows ?? []).map((r: any) => ({
+      id: r.id,
+      stroke_key: r.strokes?.key ?? '',
+      ladder_order: r.ladder_order,
+    }))
+    // strokeMeta: 영법별 고유 목록, display_order 기준 정렬
+    const strokeMap = new Map<string, { label: string; display_order: number }>()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    for (const r of (stepRows ?? []) as any[]) {
+      const key = r.strokes?.key
+      if (key && !strokeMap.has(key)) {
+        strokeMap.set(key, { label: r.strokes?.label ?? key, display_order: r.strokes?.display_order ?? 999 })
+      }
+    }
+    strokeMeta = [...strokeMap.entries()]
+      .sort((a, b) => a[1].display_order - b[1].display_order)
+      .map(([key, v]) => ({ key, label: v.label }))
+  }
+
+  // 2) 활성 학생 전체
+  const { data: studentRows, error: studentErr } = await supabase
+    .from('students').select('id,name').eq('is_active', true).order('name')
+  if (studentErr) throw studentErr
+  const baseStudents = studentRows ?? []
+  const studentIds = baseStudents.map(s => s.id)
+
+  // 3) 전체 학생 통과 이력 일괄 조회 (N+1 방지)
+  const passedByStudent = new Map<string, Set<string>>()
+  for (const s of baseStudents) passedByStudent.set(s.id, new Set())
+  if (studentIds.length) {
+    const { data: progRows } = await supabase
+      .from('skill_progress').select('student_id,skill_step_id').in('student_id', studentIds)
+    for (const p of progRows ?? []) {
+      passedByStudent.get(p.student_id)?.add(p.skill_step_id)
+    }
+  }
+
+  // 4) 각 학생 현재 영법 인메모리 계산 (첫 미통과 단계의 stroke_key)
+  const students = baseStudents.map(s => {
+    const passed = passedByStudent.get(s.id) ?? new Set()
+    const currentStep = allSteps.find(step => !passed.has(step.id))
+    return { id: s.id, name: s.name, currentStrokeKey: currentStep?.stroke_key ?? null }
+  })
+
+  // 5) 오늘 pending 세션 수
+  const { count: pendingCount } = await supabase
+    .from('sessions').select('id', { count: 'exact', head: true })
+    .eq('session_date', today).eq('status', 'pending')
+
+  // 6) 최근 통과 이력 (최근 10건, 학생명 + 단계 label 포함)
+  const { data: passRows } = await supabase
+    .from('skill_progress')
+    .select('passed_at,students(name),skill_steps(label)')
+    .order('passed_at', { ascending: false })
+    .limit(10)
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const recentPasses = (passRows ?? []).map((r: any) => ({
+    studentName: r.students?.name ?? '',
+    stepLabel: r.skill_steps?.label ?? '',
+    passedAt: r.passed_at,
+  }))
+
+  return {
+    input: { students, pendingCount: pendingCount ?? 0, recentPasses },
+    strokeMeta,
+  }
 }
