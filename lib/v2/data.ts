@@ -131,3 +131,21 @@ export async function getStrokeLadders(studentId: string): Promise<StrokeLadderV
   for (const a of att ?? []) if (a.skill_step_id) attemptById.set(a.skill_step_id, (attemptById.get(a.skill_step_id) ?? 0) + 1)
   return buildStrokeLadders(steps, passedIds, sourceById, attemptById)
 }
+
+// 키오스크: 강사 담당 활성 학생 + 오늘 입력 완료(session 존재) 여부
+export async function getKioskRosterRaw(instructorId: string): Promise<{ students: TodayStudent[]; doneIds: Set<string> }> {
+  const supabase = await createClient()
+  const today = new Date().toISOString().slice(0, 10)
+  const { data: rows } = await supabase.from('students')
+    .select('id,name,grade,schedule,instructor_id').eq('is_active', true).eq('instructor_id', instructorId).order('name')
+  const students: TodayStudent[] = (rows ?? []).map(s => ({
+    id: s.id, name: s.name, grade: s.grade, schedule: s.schedule, instructor_id: s.instructor_id, instructor_name: null,
+  }))
+  const ids = students.map(s => s.id)
+  const doneIds = new Set<string>()
+  if (ids.length) {
+    const { data: sess } = await supabase.from('sessions').select('student_id').eq('session_date', today).in('student_id', ids)
+    for (const s of sess ?? []) doneIds.add(s.student_id)
+  }
+  return { students, doneIds }
+}

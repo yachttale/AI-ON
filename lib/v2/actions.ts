@@ -34,6 +34,26 @@ async function ensureSession(supabase: any, userId: string, studentId: string): 
   return data.id
 }
 
+// 아이 입력용 세션 보장: 없으면 pending·child로 생성, 있으면 reported_step만 갱신(확정 전까지).
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function ensureChildSession(supabase: any, userId: string, studentId: string, reportedStepId: string | null): Promise<string> {
+  const { data: existing } = await supabase.from('sessions')
+    .select('id,status').eq('student_id', studentId).eq('session_date', today()).maybeSingle()
+  if (existing) {
+    // 이미 강사가 확정한 세션은 건드리지 않음
+    if (existing.status !== 'confirmed' && reportedStepId) {
+      await supabase.from('sessions').update({ reported_step_id: reportedStepId }).eq('id', existing.id)
+    }
+    return existing.id
+  }
+  const { data, error } = await supabase.from('sessions').insert({
+    student_id: studentId, instructor_id: userId, session_date: today(),
+    attendance: '출석', input_source: 'child', status: 'pending', reported_step_id: reportedStepId,
+  }).select('id').single()
+  if (error) throw error
+  return data.id
+}
+
 // 반배정 이동: 오늘 요일에 한해 학생을 호출 강사 본인 반으로 (그 요일 고정·매주 반복).
 // RPC가 RLS 우회, 항상 auth.uid()로 배정.
 export async function assignToMe(studentId: string) {
@@ -153,4 +173,20 @@ export async function setBaseline(studentId: string, stepIds: string[], snapshot
     if (error) throw error
   }
   revalidatePath(`/v2/student/${studentId}`)
+}
+
+// 아이 패드 입력: 출석(자동) + 오늘 한 단계(보고) + 바퀴수. 통과 판정 없음(강사 확인 단계에서).
+export async function childReportActivity(studentId: string, reportedStepId: string | null, laps: number | null) {
+  const { supabase, userId } = await ctx(); await assertOwns(supabase, userId, studentId)
+  const sessionId = await ensureChildSession(supabase, userId, studentId, reportedStepId)
+  if (laps != null && laps > 0) {
+    await supabase.from('measurements').delete()
+      .eq('student_id', studentId).eq('metric_type', 'laps').is('skill_step_id', null).eq('measured_on', today())
+    const { error } = await supabase.from('measurements').insert({
+      student_id: studentId, metric_type: 'laps', value: laps, measured_on: today(),
+      session_id: sessionId, instructor_id: userId, skill_step_id: null,
+    })
+    if (error) throw error
+  }
+  revalidatePath(`/kiosk`)
 }
