@@ -304,6 +304,7 @@ export async function getDashboardRaw(): Promise<{
   const { data: passRows } = await supabase
     .from('skill_progress')
     .select('passed_at,students(name),skill_steps(label)')
+    .eq('source', 'observed')
     .order('passed_at', { ascending: false })
     .limit(10)
 
