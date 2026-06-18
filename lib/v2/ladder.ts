@@ -38,3 +38,31 @@ export function buildStrokeLadders(
   }
   return strokes
 }
+
+// 오늘 카드용: 현재 칸이 속한 영법(focus)과, 그 영법에서 칩으로 노출할 창을 추출.
+// 창 = focus 영법의 (미통과 ∪ keepPassedIds) 단계를 ladder_order 순으로 size개.
+// keepPassedIds(=오늘 통과)는 통과해도 수업 끝까지 칩에 남기기 위함.
+export function selectCardWindow(
+  strokes: StrokeLadderView[],
+  opts: { size?: number; keepPassedIds?: Set<string> } = {},
+): { focus: StrokeLadderView | null; steps: LadderStepView[] } {
+  const size = opts.size ?? 8
+  const keep = opts.keepPassedIds ?? new Set<string>()
+  if (strokes.length === 0) return { focus: null, steps: [] }
+
+  // 현재 단계(isCurrent)가 있는 영법 → 없으면 미통과 단계가 남은 첫 영법 → 없으면 마지막 영법
+  const flat = strokes.flatMap(s => s.tracks.flatMap(t => t.steps))
+  const currentStep = flat.find(s => s.isCurrent)
+  const focusKey = currentStep?.stroke_key
+    ?? strokes.find(s => s.tracks.some(t => t.steps.some(st => !st.passed)))?.stroke_key
+    ?? strokes[strokes.length - 1].stroke_key
+  const focus = strokes.find(s => s.stroke_key === focusKey) ?? null
+  if (!focus) return { focus: null, steps: [] }
+
+  const steps = focus.tracks
+    .flatMap(t => t.steps)
+    .filter(s => !s.passed || keep.has(s.id))
+    .sort((a, b) => a.ladder_order - b.ladder_order)
+    .slice(0, size)
+  return { focus, steps }
+}

@@ -2,6 +2,7 @@
 'use server'
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
+import { kstToday, kstWeekday } from '@/lib/v2/now'
 import type { Attendance, MetricType, Difficulty } from '@/types/v2'
 
 async function ctx() {
@@ -10,17 +11,19 @@ async function ctx() {
   if (!user) throw new Error('Unauthorized')
   return { supabase, userId: user.id }
 }
+// 기록 권한: 원장 ∪ 고정 담당 ∪ 오늘 요일 배정. (오늘 '내 수업' 판정과 동일 기준)
 async function assertOwns(supabase: Awaited<ReturnType<typeof createClient>>, userId: string, studentId: string) {
-  // 원장(director)은 전체 학생 입력 허용
-  const { data: profile } = await supabase.from('profiles').select('role').eq('id', userId).maybeSingle()
-  if (profile?.role === 'director') return
-  // 강사: 오늘 요일에 이 학생이 내 배정인지 확인 (요일별 배정 기준)
-  const weekday = new Date().getDay()
-  const { data } = await supabase.from('student_day_instructors').select('student_id')
-    .eq('student_id', studentId).eq('weekday', weekday).eq('instructor_id', userId).maybeSingle()
-  if (!data) throw new Error('Forbidden')
+  const { data: prof } = await supabase.from('profiles').select('role').eq('id', userId).maybeSingle()
+  if (prof?.role === 'director') return  // 원장도 수업 — 모든 학생 기록 가능
+  const { data: s } = await supabase.from('students').select('instructor_id').eq('id', studentId).maybeSingle()
+  if (s?.instructor_id === userId) return  // 고정 담당
+  const weekday = kstWeekday()
+  const { data: a } = await supabase.from('student_day_instructors')
+    .select('instructor_id').eq('student_id', studentId).eq('weekday', weekday).maybeSingle()
+  if (a?.instructor_id === userId) return  // 오늘 요일 배정(오버라이드)
+  throw new Error('Forbidden')
 }
-const today = () => new Date().toISOString().slice(0, 10)
+const today = kstToday
 
 // 당일 session 보장(없으면 출석 기본). session id 반환.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -58,7 +61,7 @@ async function ensureChildSession(supabase: any, userId: string, studentId: stri
 // RPC가 RLS 우회, 항상 auth.uid()로 배정.
 export async function assignToMe(studentId: string) {
   const { supabase } = await ctx()
-  const weekday = new Date().getDay()  // 0=일 ~ 6=토
+  const weekday = kstWeekday()  // 0=일 ~ 6=토 (KST)
   const { error } = await supabase.rpc('assign_day_to_me', { p_student_id: studentId, p_weekday: weekday })
   if (error) throw error
   revalidatePath('/v2/today')
@@ -96,7 +99,106 @@ export async function passStepAction(studentId: string, step: { id: string; key:
   for (const m of opts.measures ?? []) {
     await supabase.from('measurements').insert({ student_id: studentId, metric_type: m.metric, value: m.value, measured_on: today(), session_id: sessionId, skill_step_id: step.id, instructor_id: userId })
   }
-  revalidatePath(`/v2/student/${studentId}`)
+  revalidatePath('/v2/today'); revalidatePath(`/v2/student/${studentId}`)
+}
+
+// 오늘 카드 칩 탭 = "오늘 했음" 토글. 오늘자 attempt 행이 있으면 취소(삭제), 없으면 1건 기록.
+// (통과/사다리 진행과 분리 — 탭해도 카드/칩 안 사라짐.)
+export async function recordStepToday(studentId: string, stepId: string) {
+  const { supabase, userId } = await ctx(); await assertOwns(supabase, userId, studentId)
+  const sessionId = await ensureSession(supabase, userId, studentId)
+  const { data: existing } = await supabase.from('measurements').select('id')
+    .eq('student_id', studentId).eq('skill_step_id', stepId).eq('metric_type', 'attempt').eq('measured_on', today())
+  if (existing && existing.length > 0) {
+    const { error } = await supabase.from('measurements').delete()
+      .eq('student_id', studentId).eq('skill_step_id', stepId).eq('metric_type', 'attempt').eq('measured_on', today())
+    if (error) throw error
+  } else {
+    const { error } = await supabase.from('measurements').insert({
+      student_id: studentId, metric_type: 'attempt', value: 1, measured_on: today(), session_id: sessionId, skill_step_id: stepId, instructor_id: userId,
+    })
+    if (error) throw error
+  }
+  revalidatePath('/v2/today')
+}
+
+// 측정 스텝 입력(초/스트로크/바퀴) — append. 오늘 카드/진도 양쪽 반영.
+export async function recordMeasureToday(studentId: string, stepId: string, metric: MetricType, value: number) {
+  const { supabase, userId } = await ctx(); await assertOwns(supabase, userId, studentId)
+  const sessionId = await ensureSession(supabase, userId, studentId)
+  const { error } = await supabase.from('measurements').insert({
+    student_id: studentId, metric_type: metric, value, measured_on: today(), session_id: sessionId, skill_step_id: stepId, instructor_id: userId,
+  })
+  if (error) throw error
+  revalidatePath('/v2/today'); revalidatePath(`/v2/student/${studentId}`)
+}
+
+// 휴원일 토글(원장 전용): 오늘을 휴원일로 지정/해제. 결석과 무관 — 그 날 수업 자체가 없음.
+export async function setClosureToday(closed: boolean) {
+  const { supabase, userId } = await ctx()
+  const { data: profile } = await supabase.from('profiles').select('role').eq('id', userId).single()
+  if (profile?.role !== 'director') throw new Error('Forbidden')
+  if (closed) {
+    const { error } = await supabase.from('studio_closures').upsert({ closed_on: today(), created_by: userId }, { onConflict: 'closed_on' })
+    if (error) throw error
+  } else {
+    const { error } = await supabase.from('studio_closures').delete().eq('closed_on', today())
+    if (error) throw error
+  }
+  revalidatePath('/v2/today'); revalidatePath('/v2/director')
+}
+
+async function isDirector(supabase: Awaited<ReturnType<typeof createClient>>, userId: string) {
+  const { data } = await supabase.from('profiles').select('role').eq('id', userId).maybeSingle()
+  return data?.role === 'director'
+}
+
+// 담당 강사(반) 변경 / 미배정. instructorId=null → 미배정. 원장은 임의 배정, 강사는 본인 학생 해제만.
+// 요일배정을 정리해 정적 담당을 단일 기준으로 둠.
+export async function setStudentInstructor(studentId: string, instructorId: string | null) {
+  const { supabase, userId } = await ctx()
+  const director = await isDirector(supabase, userId)
+  if (!director) {
+    await assertOwns(supabase, userId, studentId)
+    if (instructorId !== null && instructorId !== userId) throw new Error('Forbidden')
+  }
+  await supabase.from('student_day_instructors').delete().eq('student_id', studentId)
+  const { error } = await supabase.from('students').update({ instructor_id: instructorId }).eq('id', studentId)
+  if (error) throw error
+  for (const p of ['/v2/today', '/v2/students', '/v2/director', '/v2/director/students', `/v2/student/${studentId}`]) revalidatePath(p)
+}
+
+// 퇴원 신청(강사) → pending. 원장이 승인하면 비활성.
+export async function requestWithdrawal(studentId: string, note?: string) {
+  const { supabase, userId } = await ctx(); await assertOwns(supabase, userId, studentId)
+  const { error } = await supabase.from('students')
+    .update({ withdrawal_status: 'pending', withdrawal_requested_by: userId, withdrawal_note: note ?? null }).eq('id', studentId)
+  if (error) throw error
+  revalidatePath('/v2/director'); revalidatePath(`/v2/student/${studentId}`)
+}
+export async function cancelWithdrawal(studentId: string) {
+  const { supabase, userId } = await ctx(); await assertOwns(supabase, userId, studentId)
+  const { error } = await supabase.from('students')
+    .update({ withdrawal_status: null, withdrawal_requested_by: null, withdrawal_note: null, is_active: true }).eq('id', studentId)
+  if (error) throw error
+  for (const p of ['/v2/today', '/v2/students', '/v2/director', `/v2/student/${studentId}`]) revalidatePath(p)
+}
+export async function approveWithdrawal(studentId: string) {
+  const { supabase, userId } = await ctx()
+  if (!await isDirector(supabase, userId)) throw new Error('Forbidden')
+  const { error } = await supabase.from('students')
+    .update({ withdrawal_status: 'approved', is_active: false }).eq('id', studentId)
+  if (error) throw error
+  for (const p of ['/v2/today', '/v2/students', '/v2/director', '/v2/director/students', `/v2/student/${studentId}`]) revalidatePath(p)
+}
+
+// 결석 토글: 켜면 attendance='결석', 끄면 '출석'(출석은 암묵 기본).
+export async function markAbsent(studentId: string, absent: boolean) {
+  const { supabase, userId } = await ctx(); await assertOwns(supabase, userId, studentId)
+  const { error } = await supabase.from('sessions')
+    .upsert({ student_id: studentId, instructor_id: userId, session_date: today(), attendance: absent ? '결석' : '출석' }, { onConflict: 'student_id,session_date' })
+  if (error) throw error
+  revalidatePath('/v2/today')
 }
 
 // 계단식 통과: 같은 영법의 ladder_order 이하 ladder 단계를 모두 통과(상위 클릭 → 하위 자동). single/counter/repeatable 제외.
