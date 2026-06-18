@@ -43,6 +43,8 @@ export interface Session {
   id: string; session_date: string; student_id: string; instructor_id: string
   attendance: Attendance; absence_reason: AbsenceReason | null
   template_id: string | null; focus_stroke_id: string | null; memo: string | null; created_at: string
+  input_source: 'child' | 'instructor'; status: 'pending' | 'confirmed'
+  confirmed_by: string | null; confirmed_at: string | null; reported_step_id: string | null
 }
 export interface Measurement {
   id: string; student_id: string; metric_type: MetricType; value: number; unit: string | null
