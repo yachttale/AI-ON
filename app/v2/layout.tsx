@@ -11,7 +11,7 @@ export default async function V2Layout({ children }: { children: React.ReactNode
   if (!user) redirect('/login')
   const { data: profile } = await supabase.from('profiles').select('name,role').eq('id', user.id).single()
   return (
-    <div className="mx-auto max-w-md min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50">
       <header className="px-4 py-3 border-b bg-white flex items-center justify-between">
         <Link href="/v2/today" className="font-bold text-gray-800">AI-ON</Link>
         <div className="flex items-center gap-2">

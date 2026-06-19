@@ -1,123 +1,193 @@
-// app/v2/director/page.tsx — 원장 전체 현황 대시보드(원장 전용)
+// app/v2/director/page.tsx — 아이들 현황 (다크 어드민)
 import Link from 'next/link'
-import { redirect } from 'next/navigation'
-import { createClient } from '@/lib/supabase/server'
+import { Users, TrendingUp, UserMinus, UserPlus, CheckCircle, AlertCircle } from 'lucide-react'
 import { getDirectorDashboard, isClosedOn } from '@/lib/v2/data'
+import { getDashboardRaw } from '@/lib/v2/data'
+import { buildDashboard } from '@/lib/v2/dashboard'
 import { strokeBadge } from '@/lib/v2/stroke-colors'
-import { ClosureToggle } from './ClosureToggle'
+
+const STROKE_COLORS: Record<string, string> = {
+  beginner: 'bg-gray-400',
+  free: 'bg-blue-400',
+  back: 'bg-cyan-400',
+  breast: 'bg-green-400',
+  butterfly: 'bg-purple-400',
+  master: 'bg-teal-400',
+}
 
 export default async function DirectorPage() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  const { data: profile } = await supabase.from('profiles').select('role').eq('id', user!.id).single()
-  if (profile?.role !== 'director') redirect('/v2/today')
-
-  const [d, closed] = await Promise.all([getDirectorDashboard(), isClosedOn()])
-  const todayPct = d.todayScheduled ? Math.round((d.todayDone / d.todayScheduled) * 100) : 0
+  const [d, closed, { input, strokeMeta }] = await Promise.all([
+    getDirectorDashboard(),
+    isClosedOn(),
+    getDashboardRaw(),
+  ])
+  const view = buildDashboard(input, strokeMeta)
+  const todayPct = d.todayScheduled
+    ? Math.round((d.todayDone / d.todayScheduled) * 100)
+    : 0
 
   return (
     <div className="space-y-6">
-      <ClosureToggle closed={closed} />
-
-      {/* 전체 통계 */}
-      <div className="grid grid-cols-3 gap-3">
-        <Stat label="재원" value={d.totalStudents} unit="명" />
-        <Stat label="오늘 입력" value={`${d.todayDone}/${d.todayScheduled}`} unit={`${todayPct}%`} accent />
-        <Stat label="강사" value={d.totalInstructors} unit="명" />
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-xl font-bold text-white">아이들 현황</h1>
+          <p className="text-sm text-white/40 mt-0.5">
+            {closed ? '🏖️ 오늘은 휴원일입니다' : '실시간 수업 현황'}
+          </p>
+        </div>
+        <Link
+          href="/v2/director/students"
+          className="flex items-center gap-2 px-4 py-2 rounded-xl bg-teal-500/20 text-teal-300 text-sm font-medium hover:bg-teal-500/30 transition-colors"
+        >
+          <Users size={15} />
+          전체 학생 검색
+        </Link>
       </div>
 
-      {/* 전체 학생 명단 진입 */}
-      <Link href="/v2/director/students"
-        className="flex items-center justify-between bg-blue-500 text-white rounded-xl px-4 py-3 font-semibold">
-        <span>전체 학생 명단 · 검색</span>
-        <span className="text-sm opacity-90">{d.totalStudents}명 →</span>
-      </Link>
-
-      {/* 운영 요약 */}
-      <div className="grid grid-cols-3 gap-3">
-        <Stat label="오늘 결석" value={d.todayAbsent} unit="명" />
-        <Stat label="퇴원 대기" value={d.pendingWithdrawals} unit="명" />
-        <Stat label="최근 30일 신규" value={d.newStudents30d} unit="명" />
+      {/* 상단 통계 카드 */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+        <StatCard
+          icon={<Users size={20} className="text-blue-400" />}
+          label="재원생"
+          value={d.totalStudents}
+          unit="명"
+          bg="bg-blue-500/10"
+        />
+        <StatCard
+          icon={<CheckCircle size={20} className="text-teal-400" />}
+          label="오늘 입력"
+          value={`${d.todayDone}/${d.todayScheduled}`}
+          unit={`${todayPct}%`}
+          accent
+          bg="bg-teal-500/10"
+        />
+        <StatCard
+          icon={<UserMinus size={20} className="text-orange-400" />}
+          label="오늘 결석"
+          value={d.todayAbsent}
+          unit="명"
+          bg="bg-orange-500/10"
+        />
+        <StatCard
+          icon={<AlertCircle size={20} className="text-red-400" />}
+          label="퇴원 대기"
+          value={d.pendingWithdrawals}
+          unit="명"
+          bg="bg-red-500/10"
+        />
+        <StatCard
+          icon={<UserPlus size={20} className="text-purple-400" />}
+          label="신규 30일"
+          value={d.newStudents30d}
+          unit="명"
+          bg="bg-purple-500/10"
+        />
       </div>
 
-      {/* 강사별 스코어카드 */}
-      {d.instructorStats.length > 0 && (
-        <section>
-          <h2 className="text-sm font-bold text-gray-700 mb-2">강사별 현황</h2>
-          <div className="space-y-2">
-            {d.instructorStats.map(inst => (
-              <Link key={inst.id} href={`/v2/director/students?inst=${encodeURIComponent(inst.name)}`} className="block bg-white rounded-xl px-4 py-3 border space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-bold text-gray-800">{inst.name} <span className="text-gray-300 font-normal">›</span></span>
-                  <div className="flex items-center gap-2">
-                    <div className="flex gap-0.5">
-                      {Array.from({ length: inst.scheduled }).map((_, i) => (
-                        <div key={i} className={`w-2.5 h-2.5 rounded-full ${i < inst.done ? 'bg-green-400' : 'bg-gray-200'}`} />
-                      ))}
-                    </div>
-                    <span className="text-xs text-gray-400">오늘 {inst.done}/{inst.scheduled}</span>
-                  </div>
-                </div>
-                <div className="grid grid-cols-3 gap-2 text-center">
-                  <Mini label="담당" value={`${inst.assigned}명`} />
-                  <Mini label="최근7일 통과" value={`${inst.recentPasses}`} accent />
-                  <Mini label="퇴원율" value={`${inst.withdrawalRate}%`} warn={inst.withdrawalRate >= 20} sub={`${inst.withdrawn}명`} />
-                </div>
-              </Link>
-            ))}
-          </div>
-          <p className="text-[11px] text-gray-300 mt-1.5">* 퇴원율·통과 수는 데이터가 쌓일수록 정확해집니다(현재 초기 수집 단계).</p>
-        </section>
-      )}
+      {/* 2열 그리드 */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
-      {/* 영법별 진행 중 학생 */}
-      {d.strokeGroups.map(g => {
-        const badge = strokeBadge(g.stroke_key)
-        return (
-          <section key={g.stroke_key}>
-            <h2 className="text-sm font-bold mb-2 flex items-center gap-2 text-gray-700">
-              <span className={`w-2 h-2 rounded-full ${badge.bar}`} />
-              {g.stroke_label} 진행 중 <span className="text-gray-400 font-normal">({g.students.length}명)</span>
-            </h2>
+        {/* 영법별 현황 */}
+        <section className="space-y-3">
+          <h2 className="text-sm font-semibold text-white/60 uppercase tracking-wider">영법별 현황</h2>
+          {d.strokeGroups.length === 0 ? (
+            <DarkCard className="py-8 text-center text-white/30 text-sm">데이터 없음</DarkCard>
+          ) : (
             <div className="space-y-2">
-              {g.students.map(s => (
-                <Link key={s.id} href={`/v2/student/${s.id}`} className="flex items-center justify-between bg-white rounded-xl px-4 py-3 border">
-                  <div>
-                    <p className="text-sm font-medium text-gray-800">{s.name}</p>
-                    <p className="text-xs text-gray-400">{s.instructorName ?? '미배정'}</p>
-                  </div>
-                  <span className="text-xs text-gray-400 tabular-nums">{s.passed}/{s.total}</span>
-                </Link>
-              ))}
+              {d.strokeGroups.map(g => {
+                const color = STROKE_COLORS[g.stroke_key] ?? 'bg-gray-400'
+                const pct = g.students.length
+                  ? Math.round((g.students.filter(s => s.passed >= s.total * 0.5).length / g.students.length) * 100)
+                  : 0
+                return (
+                  <DarkCard key={g.stroke_key} className="flex items-center gap-4">
+                    <div className={`w-2.5 h-2.5 rounded-full shrink-0 ${color}`} />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className="text-sm font-medium text-white/80">{g.stroke_label}</span>
+                        <span className="text-sm font-bold text-white">{g.students.length}명</span>
+                      </div>
+                      <div className="h-1.5 bg-white/10 rounded-full overflow-hidden">
+                        <div
+                          className={`h-full rounded-full ${color} opacity-70`}
+                          style={{ width: `${Math.min((g.students.length / Math.max(d.totalStudents, 1)) * 100 * 3, 100)}%` }}
+                        />
+                      </div>
+                    </div>
+                    <Link
+                      href={`/v2/director/students`}
+                      className="text-xs text-white/30 hover:text-teal-400 shrink-0 transition-colors"
+                    >
+                      →
+                    </Link>
+                  </DarkCard>
+                )
+              })}
             </div>
-          </section>
-        )
-      })}
+          )}
+        </section>
 
-      {d.strokeGroups.length === 0 && (
-        <p className="text-center py-8 text-gray-400 text-sm">진행 중인 학생 데이터가 없습니다</p>
-      )}
+        {/* 최근 통과 + 미확인 */}
+        <section className="space-y-3">
+          <h2 className="text-sm font-semibold text-white/60 uppercase tracking-wider">최근 통과</h2>
+
+          {view.pendingCount > 0 && (
+            <DarkCard className="flex items-center gap-3 border-orange-500/20 bg-orange-500/5">
+              <AlertCircle size={18} className="text-orange-400 shrink-0" />
+              <span className="text-sm text-orange-300">
+                미확인 수업 <span className="font-bold text-orange-400">{view.pendingCount}건</span>
+              </span>
+            </DarkCard>
+          )}
+
+          <DarkCard className="p-0 overflow-hidden">
+            {view.recentPasses.length === 0 ? (
+              <div className="py-8 text-center text-white/30 text-sm">최근 통과 기록 없음</div>
+            ) : (
+              <div className="divide-y divide-white/5">
+                {view.recentPasses.map((p, i) => (
+                  <div key={i} className="flex items-center justify-between px-4 py-3 hover:bg-white/5 transition-colors">
+                    <div>
+                      <p className="text-sm font-medium text-white/80">{p.studentName}</p>
+                      <p className="text-xs text-white/40 mt-0.5">{p.stepLabel}</p>
+                    </div>
+                    <span className="text-xs text-white/30 tabular-nums">{p.passedAt.slice(0, 10)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </DarkCard>
+        </section>
+      </div>
     </div>
   )
 }
 
-function Mini({ label, value, sub, accent, warn }: { label: string; value: string; sub?: string; accent?: boolean; warn?: boolean }) {
+function DarkCard({ children, className = '' }: { children: React.ReactNode; className?: string }) {
   return (
-    <div className="rounded-lg bg-gray-50 py-1.5">
-      <p className="text-[10px] text-gray-400">{label}</p>
-      <p className={`text-sm font-bold ${warn ? 'text-red-500' : accent ? 'text-sky-600' : 'text-gray-700'}`}>
-        {value}{sub && <span className="text-[10px] font-normal text-gray-400 ml-0.5">{sub}</span>}
-      </p>
+    <div className={`bg-[#1a1a2e] border border-white/8 rounded-xl p-4 ${className}`}>
+      {children}
     </div>
   )
 }
 
-function Stat({ label, value, unit, accent }: { label: string; value: string | number; unit?: string; accent?: boolean }) {
+function StatCard({ icon, label, value, unit, accent, bg }: {
+  icon: React.ReactNode
+  label: string
+  value: string | number
+  unit?: string
+  accent?: boolean
+  bg?: string
+}) {
   return (
-    <div className="bg-white rounded-xl p-3 border text-center">
-      <p className="text-xs text-gray-400 mb-1">{label}</p>
-      <p className={`text-2xl font-bold ${accent ? 'text-sky-600' : 'text-gray-800'}`}>
-        {value}{unit && <span className="text-xs font-normal text-gray-400 ml-0.5">{unit}</span>}
+    <div className={`rounded-xl p-4 border border-white/8 space-y-3 ${bg ?? 'bg-[#1a1a2e]'}`}>
+      <div className="flex items-center justify-between">
+        <span className="text-xs text-white/40">{label}</span>
+        {icon}
+      </div>
+      <p className={`text-2xl font-bold ${accent ? 'text-teal-300' : 'text-white'}`}>
+        {value}
+        {unit && <span className="text-xs font-normal text-white/40 ml-1">{unit}</span>}
       </p>
     </div>
   )
