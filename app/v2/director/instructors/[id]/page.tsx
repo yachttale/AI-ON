@@ -94,13 +94,13 @@ export default async function InstructorDetailPage({
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
             {d.strokeGroups.map(g => (
               <div key={g.key} className={`rounded-xl border p-4 space-y-3 ${STROKE_COLOR[g.key] ?? STROKE_COLOR.unassigned}`}>
-                <div className="flex items-center justify-between">
+                <Link href={`/v2/director/stroke/${g.key}`} className="flex items-center justify-between hover:opacity-70 transition-opacity">
                   <div className="flex items-center gap-2">
                     <div className={`w-2 h-2 rounded-full ${DOT_COLOR[g.key] ?? 'bg-gray-400'}`} />
                     <span className="text-sm font-medium">{g.label}</span>
                   </div>
-                  <span className="text-lg font-bold">{g.count}명</span>
-                </div>
+                  <span className="text-lg font-bold">{g.count}명 →</span>
+                </Link>
                 <div className="space-y-1 max-h-32 overflow-y-auto">
                   {g.students.map(s => (
                     <Link

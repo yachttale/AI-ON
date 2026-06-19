@@ -39,6 +39,7 @@ export default async function DirectorPage() {
       {/* 상단 통계 카드 */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
         <StatCard
+          href="/v2/director/students"
           icon={<Users size={20} className="text-blue-400" />}
           label="재원생"
           value={d.totalStudents}
@@ -46,6 +47,7 @@ export default async function DirectorPage() {
           bg="bg-blue-500/10"
         />
         <StatCard
+          href="/v2/director/instructors"
           icon={<CheckCircle size={20} className="text-teal-400" />}
           label="오늘 입력"
           value={`${d.todayDone}/${d.todayScheduled}`}
@@ -54,6 +56,7 @@ export default async function DirectorPage() {
           bg="bg-teal-500/10"
         />
         <StatCard
+          href="/v2/director/students"
           icon={<UserMinus size={20} className="text-orange-400" />}
           label="오늘 결석"
           value={d.todayAbsent}
@@ -61,6 +64,7 @@ export default async function DirectorPage() {
           bg="bg-orange-500/10"
         />
         <StatCard
+          href="/v2/director/students"
           icon={<AlertCircle size={20} className="text-red-400" />}
           label="퇴원 대기"
           value={d.pendingWithdrawals}
@@ -68,6 +72,7 @@ export default async function DirectorPage() {
           bg="bg-red-500/10"
         />
         <StatCard
+          href="/v2/director/students"
           icon={<UserPlus size={20} className="text-purple-400" />}
           label="신규 30일"
           value={d.newStudents30d}
@@ -143,16 +148,18 @@ function DarkCard({ children, className = '' }: { children: React.ReactNode; cla
   )
 }
 
-function StatCard({ icon, label, value, unit, accent, bg }: {
+function StatCard({ icon, label, value, unit, accent, bg, href }: {
   icon: React.ReactNode
   label: string
   value: string | number
   unit?: string
   accent?: boolean
   bg?: string
+  href?: string
 }) {
-  return (
-    <div className={`rounded-xl p-4 border border-white/8 space-y-3 ${bg ?? 'bg-[#1a1a2e]'}`}>
+  const cls = `rounded-xl p-4 border border-white/8 space-y-3 transition-all ${bg ?? 'bg-[#1a1a2e]'} ${href ? 'hover:border-teal-500/40 hover:brightness-110 cursor-pointer' : ''}`
+  const inner = (
+    <>
       <div className="flex items-center justify-between">
         <span className="text-xs text-white/40">{label}</span>
         {icon}
@@ -161,6 +168,8 @@ function StatCard({ icon, label, value, unit, accent, bg }: {
         {value}
         {unit && <span className="text-xs font-normal text-white/40 ml-1">{unit}</span>}
       </p>
-    </div>
+    </>
   )
+  if (href) return <Link href={href} className={cls}>{inner}</Link>
+  return <div className={cls}>{inner}</div>
 }
