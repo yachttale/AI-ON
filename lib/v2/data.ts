@@ -155,73 +155,54 @@ export async function getTodayStudentsRaw(): Promise<{
   const supabase = await createClient()
   const today = kstToday()
   const weekday = kstWeekday()  // 0=일 ~ 6=토 (KST)
-  const { data: rows, error } = await supabase
-    .from('students')
-    .select('id,name,grade,schedule,instructor_id')
-    .eq('is_active', true).order('name')
+  // 5개 쿼리 병렬 실행 — student_id 필터 없이 날짜/요일 조건만, 메모리에서 필터
+  const [
+    { data: rows, error },
+    { data: profs },
+    { data: sdi },
+    { data: sessions },
+    { data: laps },
+  ] = await Promise.all([
+    supabase.from('students').select('id,name,grade,schedule,instructor_id').eq('is_active', true).order('name'),
+    supabase.from('profiles').select('id,name'),
+    supabase.from('student_day_instructors').select('student_id,instructor_id').eq('weekday', weekday),
+    supabase.from('sessions').select('student_id,attendance,status,input_source,reported_step_id').eq('session_date', today),
+    supabase.from('measurements').select('student_id,value').eq('metric_type', 'laps').is('skill_step_id', null).eq('measured_on', today),
+  ])
   if (error) throw error
   const base = rows ?? []
-  const ids = base.map(s => s.id)
-  // 강사 이름 맵(고정 담당·요일 배정 공용)
-  const { data: profs } = await supabase.from('profiles').select('id,name')
+  const activeIds = new Set(base.map(s => s.id))
   const nameById = new Map((profs ?? []).map(p => [p.id, p.name]))
-  // 오늘 요일의 학생별 담당 강사(요일별 배정 = 오버라이드)
-  const dayAssign = new Map<string, string>()  // student_id → instructor_id
-  if (ids.length) {
-    const { data: sdi } = await supabase
-      .from('student_day_instructors')
-      .select('student_id,instructor_id')
-      .eq('weekday', weekday).in('student_id', ids)
-    for (const a of sdi ?? []) dayAssign.set(a.student_id, a.instructor_id)
-  }
-  // 오늘 담당 = 요일 배정(오버라이드) ?? 고정 담당. → 원장·강사 모두 평소 담당이 '내 수업'에 노출.
+  const dayAssign = new Map<string, string>()
+  for (const a of sdi ?? []) if (activeIds.has(a.student_id)) dayAssign.set(a.student_id, a.instructor_id)
   const students: TodayStudent[] = base.map(s => {
     const instructorId = dayAssign.get(s.id) ?? s.instructor_id ?? null
     return { id: s.id, name: s.name, grade: s.grade, schedule: s.schedule, instructor_id: instructorId, instructor_name: instructorId ? nameById.get(instructorId) ?? null : null }
   })
+  const lapByStudent = new Map<string, number>()
+  for (const l of laps ?? []) if (activeIds.has(l.student_id)) lapByStudent.set(l.student_id, Number(l.value))
   const sessionById = new Map<string, TodaySession>()
   const reportedStepById = new Map<string, { id: string; key: string; ladder_order: number; stroke_key: string; label: string }>()
-  if (ids.length) {
-    const { data: sessions } = await supabase
-      .from('sessions')
-      .select('student_id,attendance,status,input_source,reported_step_id')
-      .eq('session_date', today).in('student_id', ids)
-    const { data: laps } = await supabase
-      .from('measurements').select('student_id,value').eq('metric_type', 'laps').is('skill_step_id', null)
-      .eq('measured_on', today).in('student_id', ids)
-    const lapByStudent = new Map<string, number>()
-    for (const l of laps ?? []) lapByStudent.set(l.student_id, Number(l.value))
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  for (const s of (sessions ?? []) as any[]) {
+    if (!activeIds.has(s.student_id)) continue
+    sessionById.set(s.student_id, {
+      attendance: s.attendance,
+      laps: lapByStudent.get(s.student_id) ?? null,
+      status: s.status ?? null,
+      inputSource: s.input_source ?? null,
+      reportedStepId: s.reported_step_id ?? null,
+    })
+  }
+  for (const [sid, v] of lapByStudent) {
+    if (!sessionById.has(sid)) sessionById.set(sid, { attendance: null, laps: v, status: null, inputSource: null, reportedStepId: null })
+  }
+  const reportedStepIds = [...sessionById.values()].map(s => s.reportedStepId).filter((id): id is string => id != null)
+  if (reportedStepIds.length) {
+    const { data: stepRows } = await supabase.from('skill_steps').select('id,key,label,ladder_order,strokes(key)').in('id', reportedStepIds)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    for (const s of (sessions ?? []) as any[]) {
-      sessionById.set(s.student_id, {
-        attendance: s.attendance,
-        laps: lapByStudent.get(s.student_id) ?? null,
-        status: s.status ?? null,
-        inputSource: s.input_source ?? null,
-        reportedStepId: s.reported_step_id ?? null,
-      })
-    }
-    for (const [sid, v] of lapByStudent) {
-      if (!sessionById.has(sid)) sessionById.set(sid, { attendance: null, laps: v, status: null, inputSource: null, reportedStepId: null })
-    }
-    // 보고단계 전체 정보 일괄 조회 (reported_step_id → skill_steps + strokes)
-    const reportedStepIds = [...sessionById.values()]
-      .map(s => s.reportedStepId).filter((id): id is string => id != null)
-    if (reportedStepIds.length) {
-      const { data: stepRows } = await supabase
-        .from('skill_steps')
-        .select('id,key,label,ladder_order,strokes(key)')
-        .in('id', reportedStepIds)
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      for (const r of (stepRows ?? []) as any[]) {
-        reportedStepById.set(r.id, {
-          id: r.id,
-          key: r.key,
-          label: r.label,
-          ladder_order: r.ladder_order,
-          stroke_key: r.strokes?.key ?? '',
-        })
-      }
+    for (const r of (stepRows ?? []) as any[]) {
+      reportedStepById.set(r.id, { id: r.id, key: r.key, label: r.label, ladder_order: r.ladder_order, stroke_key: r.strokes?.key ?? '' })
     }
   }
   return { students, sessionById, reportedStepById }
@@ -360,15 +341,15 @@ export async function getDashboardRaw(): Promise<{
 export async function enrichMineCards(cards: TodayCard[]): Promise<TodayCardView[]> {
   if (cards.length === 0) return []
   const supabase = await createClient()
-  const versionId = await getActiveVersionId(supabase)
-  if (!versionId) return cards.map(c => buildTodayCardView(c, [], new Set(), new Set()))
   const ids = cards.map(c => c.id)
   const today = todayStr()
+  // 커리큘럼은 캐시(getCachedLadderSteps)로 — getActiveVersionId+getLadderInputs 2번 왕복 → 0
   const [inputs, { data: prog }, { data: meas }] = await Promise.all([
-    getLadderInputs(supabase, versionId),
+    getCachedLadderSteps(),
     supabase.from('skill_progress').select('student_id,skill_step_id,source,passed_at').in('student_id', ids),
     supabase.from('measurements').select('student_id,skill_step_id,metric_type,measured_on').in('student_id', ids).eq('measured_on', today),
   ])
+  if (inputs.length === 0) return cards.map(c => buildTodayCardView(c, [], new Set(), new Set()))
   // 학생별 통과/오늘통과
   const passedBy = new Map<string, Set<string>>(); const sourceBy = new Map<string, Map<string, ProgressSource>>()
   const passedTodayBy = new Map<string, Set<string>>()
@@ -451,29 +432,26 @@ export async function getDirectorDashboard(): Promise<DirectorDashboard> {
   const supabase = await createClient()
   const today = todayStr()
   const weekday = kstWeekday()
-  const versionId = await getActiveVersionId(supabase)
-  const inputs = versionId ? await getLadderInputs(supabase, versionId) : []
-
-  // ladder 단계 → 영법, 영법별 ladder 총수, 영법 메타
-  const stepStroke = new Map<string, string>()       // skill_step_id → stroke_key (ladder만)
-  const ladderTotal = new Map<string, number>()       // stroke_key → ladder 단계수
-  const strokeMeta = new Map<string, string>()        // stroke_key → label
-  const strokeOrder: string[] = []
-  for (const s of inputs) {
-    if (!strokeMeta.has(s.stroke_key)) { strokeMeta.set(s.stroke_key, s.stroke_label); strokeOrder.push(s.stroke_key) }
-    if (s.step_kind === 'ladder') { stepStroke.set(s.id, s.stroke_key); ladderTotal.set(s.stroke_key, (ladderTotal.get(s.stroke_key) ?? 0) + 1) }
-  }
-
   const since7 = kstDaysAgo(7)
   const since30 = kstDaysAgo(30)
-  const [{ data: allStudents }, { data: profiles }, { data: prog }, { data: sessions }, { data: sdi }] = await Promise.all([
+  const [{ data: allStudents }, { data: profiles }, { data: prog }, { data: sessions }, { data: sdi }, inputs] = await Promise.all([
     // 퇴원율 계산 위해 비활성 포함 전체 로드
     supabase.from('students').select('id,name,schedule,instructor_id,is_active,withdrawal_status,enrolled_on').order('name'),
     supabase.from('profiles').select('id,name,role'),
     supabase.from('skill_progress').select('student_id,skill_step_id,instructor_id,passed_at,source'),
     supabase.from('sessions').select('student_id,attendance').eq('session_date', today),
     supabase.from('student_day_instructors').select('student_id,instructor_id,weekday'),
+    getCachedLadderSteps(),
   ])
+  // ladder 단계 → 영법, 영법별 ladder 총수, 영법 메타
+  const stepStroke = new Map<string, string>()
+  const ladderTotal = new Map<string, number>()
+  const strokeMeta = new Map<string, string>()
+  const strokeOrder: string[] = []
+  for (const s of inputs) {
+    if (!strokeMeta.has(s.stroke_key)) { strokeMeta.set(s.stroke_key, s.stroke_label); strokeOrder.push(s.stroke_key) }
+    if (s.step_kind === 'ladder') { stepStroke.set(s.id, s.stroke_key); ladderTotal.set(s.stroke_key, (ladderTotal.get(s.stroke_key) ?? 0) + 1) }
+  }
   const everStudents = allStudents ?? []
   const studentList = everStudents.filter(s => s.is_active)
   const nameById = new Map((profiles ?? []).map(p => [p.id, p.name]))
@@ -567,8 +545,7 @@ export interface DirectorRosterRow {
 }
 export async function getDirectorRoster(): Promise<DirectorRosterRow[]> {
   const supabase = await createClient()
-  const versionId = await getActiveVersionId(supabase)
-  const inputs = versionId ? await getLadderInputs(supabase, versionId) : []
+  const inputs = await getCachedLadderSteps()
   const ladderIds = new Set(inputs.filter(s => s.step_kind === 'ladder').map(s => s.id))
   const [{ data: students }, { data: profiles }, { data: prog }, { data: sdi }] = await Promise.all([
     supabase.from('students').select('id,name,schedule,grade,instructor_id').eq('is_active', true).order('name'),

@@ -32,9 +32,14 @@ function hourLabel(hour: number | null): string {
 
 async function TodayContent() {
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  // getUser, isClosedOn, getTodayStudentsRaw 병렬 실행
+  const [{ data: { user } }, isClosed, todayRaw] = await Promise.all([
+    supabase.auth.getUser(),
+    isClosedOn(),
+    getTodayStudentsRaw(),
+  ])
 
-  if (await isClosedOn()) {
+  if (isClosed) {
     return (
       <div className="py-16 text-center space-y-2">
         <p className="text-3xl">🏖️</p>
@@ -44,7 +49,7 @@ async function TodayContent() {
     )
   }
 
-  const { students, sessionById, reportedStepById } = await getTodayStudentsRaw()
+  const { students, sessionById, reportedStepById } = todayRaw
   const { mine, assignable } = buildTodayCards(students, sessionById, user!.id, undefined, reportedStepById)
   const cards = await enrichMineCards(mine)
   const groups = groupCardsByHour(cards)
