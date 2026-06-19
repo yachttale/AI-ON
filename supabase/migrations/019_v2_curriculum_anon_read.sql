@@ -3,9 +3,13 @@
 -- 대상 테이블: curriculum_versions, strokes, skill_tracks, skill_steps
 -- (모두 비민감 참조 데이터, PII 없음)
 
+drop policy if exists "커리큘럼버전 공개조회" on public.curriculum_versions;
 create policy "커리큘럼버전 공개조회" on public.curriculum_versions for select to anon using (true);
+drop policy if exists "영법 공개조회" on public.strokes;
 create policy "영법 공개조회" on public.strokes for select to anon using (true);
+drop policy if exists "트랙 공개조회" on public.skill_tracks;
 create policy "트랙 공개조회" on public.skill_tracks for select to anon using (true);
+drop policy if exists "단계 공개조회" on public.skill_steps;
 create policy "단계 공개조회" on public.skill_steps for select to anon using (true);
 
 grant select on public.curriculum_versions, public.strokes, public.skill_tracks, public.skill_steps to anon;
