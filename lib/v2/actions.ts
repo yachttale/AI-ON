@@ -309,6 +309,24 @@ export async function childReportActivity(studentId: string, reportedStepId: str
   revalidatePath(`/kiosk`)
 }
 
+// 오늘 해당 step의 laps 측정 최신 1행 삭제 (잘못 누른 경우 취소용)
+export async function removeLastLap(studentId: string, stepId: string) {
+  const { supabase, userId } = await ctx(); await assertOwns(supabase, userId, studentId)
+  // 오늘 해당 step의 laps 측정 중 최신 1개 id 조회
+  const { data } = await supabase
+    .from('measurements')
+    .select('id')
+    .eq('student_id', studentId)
+    .eq('skill_step_id', stepId)
+    .eq('metric_type', 'laps')
+    .eq('measured_on', today())
+    .order('created_at', { ascending: false })
+    .limit(1)
+  if (!data || data.length === 0) return
+  await supabase.from('measurements').delete().eq('id', data[0].id)
+  revalidatePath(`/v2/student/${studentId}`)
+}
+
 // 원장 전용: 신규 학생 등록
 export async function createStudent(data: {
   name: string
