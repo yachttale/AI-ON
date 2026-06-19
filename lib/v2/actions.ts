@@ -308,3 +308,31 @@ export async function childReportActivity(studentId: string, reportedStepId: str
   }
   revalidatePath(`/kiosk`)
 }
+
+// 원장 전용: 신규 학생 등록
+export async function createStudent(data: {
+  name: string
+  sex?: string
+  grade?: string
+  schedule?: string
+  phone?: string
+  enrolled_on?: string
+}): Promise<{ id: string } | { error: string }> {
+  const { supabase, userId } = await ctx()
+  const { data: prof } = await supabase.from('profiles').select('role').eq('id', userId).maybeSingle()
+  if (prof?.role !== 'director') return { error: '원장만 학생을 등록할 수 있습니다' }
+
+  const { data: student, error } = await supabase.from('students').insert({
+    name: data.name.trim(),
+    sex: data.sex || null,
+    grade: data.grade || null,
+    schedule: data.schedule || null,
+    phone: data.phone || null,
+    enrolled_on: data.enrolled_on || null,
+    is_active: true,
+  }).select('id').single()
+
+  if (error) return { error: error.message }
+  revalidatePath('/v2/director/students')
+  return { id: student.id }
+}
