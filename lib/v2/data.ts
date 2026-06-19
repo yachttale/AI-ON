@@ -435,6 +435,7 @@ export interface DirectorDashboard {
   pendingWithdrawals: number; newStudents30d: number
   instructorStats: InstructorStat[]
   strokeGroups: DirectorStrokeGroup[]
+  strokeGroupCounts: { key: string; label: string; count: number }[]
 }
 
 export async function getDirectorDashboard(): Promise<DirectorDashboard> {
@@ -539,12 +540,28 @@ export async function getDirectorDashboard(): Promise<DirectorDashboard> {
     })
     .filter(g => g.students.length > 0)
 
+  const GROUP_ORDER = [
+    { key: 'beginner', label: '초보' },
+    { key: 'free', label: '자유형' },
+    { key: 'back', label: '배영' },
+    { key: 'breast', label: '평영' },
+    { key: 'butterfly', label: '접영' },
+    { key: 'master', label: '마스터' },
+  ]
+  const groupCountMap = new Map<string, number>()
+  for (const s of studentList) {
+    const key = computeCurrentStrokeKey(inputs, passedByStudent.get(s.id) ?? new Set())
+    if (key) groupCountMap.set(key, (groupCountMap.get(key) ?? 0) + 1)
+  }
+  const strokeGroupCounts = GROUP_ORDER.map(g => ({ ...g, count: groupCountMap.get(g.key) ?? 0 }))
+
   return {
     totalStudents: studentList.length,
     totalInstructors: instructors.length,
     todayScheduled, todayDone, todayAbsent,
     pendingWithdrawals, newStudents30d,
     instructorStats, strokeGroups,
+    strokeGroupCounts,
   }
 }
 

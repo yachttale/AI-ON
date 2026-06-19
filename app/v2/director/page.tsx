@@ -6,14 +6,6 @@ import { getDashboardRaw } from '@/lib/v2/data'
 import { buildDashboard } from '@/lib/v2/dashboard'
 import { strokeBadge } from '@/lib/v2/stroke-colors'
 
-const STROKE_COLORS: Record<string, string> = {
-  beginner: 'bg-gray-400',
-  free: 'bg-blue-400',
-  back: 'bg-cyan-400',
-  breast: 'bg-green-400',
-  butterfly: 'bg-purple-400',
-  master: 'bg-teal-400',
-}
 
 export default async function DirectorPage() {
   const [d, closed, { input, strokeMeta }] = await Promise.all([
@@ -87,44 +79,24 @@ export default async function DirectorPage() {
       {/* 2열 그리드 */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
-        {/* 영법별 현황 */}
+        {/* 영법별 현황 — 6그룹 카드 */}
         <section className="space-y-3">
           <h2 className="text-sm font-semibold text-white/60 uppercase tracking-wider">영법별 현황</h2>
-          {d.strokeGroups.length === 0 ? (
-            <DarkCard className="py-8 text-center text-white/30 text-sm">데이터 없음</DarkCard>
-          ) : (
-            <div className="space-y-2">
-              {d.strokeGroups.map(g => {
-                const color = STROKE_COLORS[g.stroke_key] ?? 'bg-gray-400'
-                const pct = g.students.length
-                  ? Math.round((g.students.filter(s => s.passed >= s.total * 0.5).length / g.students.length) * 100)
-                  : 0
-                return (
-                  <DarkCard key={g.stroke_key} className="flex items-center gap-4">
-                    <div className={`w-2.5 h-2.5 rounded-full shrink-0 ${color}`} />
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between mb-1.5">
-                        <span className="text-sm font-medium text-white/80">{g.stroke_label}</span>
-                        <span className="text-sm font-bold text-white">{g.students.length}명</span>
-                      </div>
-                      <div className="h-1.5 bg-white/10 rounded-full overflow-hidden">
-                        <div
-                          className={`h-full rounded-full ${color} opacity-70`}
-                          style={{ width: `${Math.min((g.students.length / Math.max(d.totalStudents, 1)) * 100 * 3, 100)}%` }}
-                        />
-                      </div>
-                    </div>
-                    <Link
-                      href={`/v2/director/students`}
-                      className="text-xs text-white/30 hover:text-teal-400 shrink-0 transition-colors"
-                    >
-                      →
-                    </Link>
-                  </DarkCard>
-                )
-              })}
-            </div>
-          )}
+          <div className="grid grid-cols-3 gap-3">
+            {d.strokeGroupCounts.map(g => (
+              <Link
+                key={g.key}
+                href={`/v2/director/stroke/${g.key}`}
+                className="bg-[#1a1a2e] rounded-xl border border-white/8 p-3 text-center hover:bg-[#1e1e35] hover:border-teal-500/30 transition-all"
+              >
+                <p className="text-xs text-white/40 mb-1">{g.label}</p>
+                <p className="text-2xl font-bold text-white">
+                  {g.count}
+                  <span className="text-xs font-normal text-white/40 ml-0.5">명</span>
+                </p>
+              </Link>
+            ))}
+          </div>
         </section>
 
         {/* 최근 통과 + 미확인 */}
