@@ -740,3 +740,88 @@ export async function getStudentDashboard(studentId: string): Promise<StudentDas
     currentStepLabel, strokeProgress, radar, stats, dailyLog, feedbackDraft: draft,
   }
 }
+
+// 원장 → 강사 상세 대시보드
+export interface InstructorDetailStudent { id: string; name: string; grade: string | null; currentStrokeKey: string | null }
+export interface InstructorStrokeGroup { key: string; label: string; count: number; students: InstructorDetailStudent[] }
+export interface InstructorDetailData {
+  name: string; totalStudents: number
+  todayDone: number; todayScheduled: number
+  withdrawalRate: number
+  strokeGroups: InstructorStrokeGroup[]
+  recentPasses: Array<{ studentName: string; stepLabel: string; strokeLabel: string; passedAt: string }>
+}
+
+const STROKE_ORDER_KEYS = ['beginner', 'free', 'back', 'breast', 'butterfly', 'master']
+const STROKE_LABELS_MAP: Record<string, string> = {
+  beginner: '초보', free: '자유형', back: '배영', breast: '평영', butterfly: '접영', master: '마스터',
+}
+
+export async function getInstructorDetail(instructorId: string): Promise<InstructorDetailData | null> {
+  const supabase = await createClient()
+  const inputs = await getCachedLadderSteps()
+
+  const [{ data: profile }, { data: students }] = await Promise.all([
+    supabase.from('profiles').select('name').eq('id', instructorId).single(),
+    supabase.from('students').select('id,name,grade').eq('instructor_id', instructorId).eq('is_active', true).order('name'),
+  ])
+  if (!profile) return null
+
+  const studentIds = (students ?? []).map(s => s.id)
+  if (studentIds.length === 0) {
+    return { name: profile.name, totalStudents: 0, todayDone: 0, todayScheduled: 0, withdrawalRate: 0, strokeGroups: [], recentPasses: [] }
+  }
+
+  const today = kstToday()
+  const [{ data: prog }, { data: todaySess }, { data: recentProgRows }, { data: withdrawn }] = await Promise.all([
+    supabase.from('skill_progress').select('student_id,skill_step_id').in('student_id', studentIds).eq('source', 'observed'),
+    supabase.from('sessions').select('student_id,attendance').in('student_id', studentIds).eq('session_date', today),
+    supabase.from('skill_progress').select('student_id,skill_step_id,passed_at')
+      .in('student_id', studentIds).eq('source', 'observed')
+      .gte('passed_at', kstDaysAgo(30)).order('passed_at', { ascending: false }).limit(15),
+    supabase.from('students').select('id').eq('instructor_id', instructorId).eq('is_active', false).not('withdrawal_status', 'is', null),
+  ])
+
+  const passedBy = new Map<string, Set<string>>()
+  for (const p of prog ?? []) {
+    ;(passedBy.get(p.student_id) ?? passedBy.set(p.student_id, new Set()).get(p.student_id)!).add(p.skill_step_id)
+  }
+
+  const stepById = new Map(inputs.map(s => [s.id, s]))
+  const studentNameById = new Map((students ?? []).map(s => [s.id, s.name]))
+
+  const enriched: InstructorDetailStudent[] = (students ?? []).map(s => ({
+    id: s.id, name: s.name, grade: s.grade,
+    currentStrokeKey: computeCurrentStrokeKey(inputs, passedBy.get(s.id) ?? new Set()),
+  }))
+
+  // 영법별 그룹
+  const groupMap = new Map<string, InstructorDetailStudent[]>()
+  for (const s of enriched) {
+    const k = s.currentStrokeKey ?? 'unassigned'
+    ;(groupMap.get(k) ?? groupMap.set(k, []).get(k)!).push(s)
+  }
+  const strokeGroups: InstructorStrokeGroup[] = STROKE_ORDER_KEYS
+    .filter(k => groupMap.has(k))
+    .map(k => ({ key: k, label: STROKE_LABELS_MAP[k] ?? k, count: groupMap.get(k)!.length, students: groupMap.get(k)! }))
+  if (groupMap.has('unassigned')) strokeGroups.push({ key: 'unassigned', label: '미분류', count: groupMap.get('unassigned')!.length, students: groupMap.get('unassigned')! })
+
+  const todayDone = (todaySess ?? []).filter(s => s.attendance !== '결석').length
+  const todayScheduled = (todaySess ?? []).length
+
+  const recentPasses = (recentProgRows ?? []).map(p => ({
+    studentName: studentNameById.get(p.student_id) ?? '알 수 없음',
+    stepLabel: stepById.get(p.skill_step_id)?.label ?? '단계',
+    strokeLabel: stepById.get(p.skill_step_id)?.stroke_label ?? '',
+    passedAt: p.passed_at,
+  }))
+
+  const totalEver = (students?.length ?? 0) + (withdrawn?.length ?? 0)
+  const withdrawalRate = totalEver > 0 ? Math.round(((withdrawn?.length ?? 0) / totalEver) * 100) : 0
+
+  return {
+    name: profile.name, totalStudents: enriched.length,
+    todayDone, todayScheduled, withdrawalRate,
+    strokeGroups, recentPasses,
+  }
+}

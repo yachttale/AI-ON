@@ -28,7 +28,7 @@ export default async function DirectorInstructorsPage() {
             return (
               <Link
                 key={inst.id}
-                href={`/v2/director/students?inst=${encodeURIComponent(inst.name)}`}
+                href={`/v2/director/instructors/${inst.id}`}
                 className="block rounded-xl bg-[#1a1a2e] border border-white/8 p-5 hover:border-teal-500/30 hover:bg-[#1e1e35] transition-all space-y-4"
               >
                 {/* 이름 + 오늘 입력률 */}
