@@ -1,9 +1,11 @@
-// app/v2/today/page.tsx — 오늘 수업: 시간대 그룹 + 큰 카드(실시간 기록) + 가져오기 + 아이 입력 확인
+// app/v2/today/page.tsx — 오늘 수업: 미배정 최상단 → 오늘 → 어제 → 그전날
 import { Suspense } from 'react'
+import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
-import { getTodayStudentsRaw, enrichMineCards, isClosedOn } from '@/lib/v2/data'
+import { getTodayStudentsRaw, enrichMineCards, isClosedOn, getPastDayStudentsForMe } from '@/lib/v2/data'
 import { buildTodayCards, groupCardsByHour } from '@/lib/v2/today'
 import { TodayCardItem, AssignableCardItem } from './parts'
+import type { PastDayStudentRow } from '@/lib/v2/data'
 
 function TodaySkeleton() {
   return (
@@ -30,13 +32,39 @@ function hourLabel(hour: number | null): string {
   return `${h}시 수업`
 }
 
+function PastStudentCard({ s }: { s: PastDayStudentRow }) {
+  const isAbsent = s.attendance === '결석'
+  const hasRecord = s.attendance !== null
+  return (
+    <Link
+      href={`/v2/student/${s.id}`}
+      className={`flex items-center justify-between rounded-xl border px-4 py-3 ${
+        isAbsent ? 'bg-red-50 border-red-200' : hasRecord ? 'bg-green-50 border-green-200' : 'bg-white'
+      }`}
+    >
+      <div>
+        <p className="font-medium text-gray-800">{s.name}</p>
+        <p className="text-xs text-gray-400">{s.schedule ?? ''}{s.grade ? ` · ${s.grade}` : ''}</p>
+      </div>
+      <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
+        isAbsent ? 'bg-red-100 text-red-600'
+        : hasRecord ? 'bg-green-100 text-green-700'
+        : 'bg-gray-100 text-gray-400'
+      }`}>
+        {isAbsent ? '결석' : hasRecord ? '기록됨' : '미기록'}
+      </span>
+    </Link>
+  )
+}
+
 async function TodayContent() {
   const supabase = await createClient()
-  // getUser, isClosedOn, getTodayStudentsRaw 병렬 실행
-  const [{ data: { user } }, isClosed, todayRaw] = await Promise.all([
+  const [{ data: { user } }, isClosed, todayRaw, yesterday, dayBefore] = await Promise.all([
     supabase.auth.getUser(),
     isClosedOn(),
     getTodayStudentsRaw(),
+    getPastDayStudentsForMe(1),
+    getPastDayStudentsForMe(2),
   ])
 
   if (isClosed) {
@@ -54,12 +82,23 @@ async function TodayContent() {
   const cards = await enrichMineCards(mine)
   const groups = groupCardsByHour(cards)
   const todoCount = cards.filter(c => !c.recordedToday && !c.absent).length
-
-  // 오늘 수업엔 '내 반 + 미배정'만. 다른 반(배정된) 아이들은 숨김.
   const unassigned = assignable.filter(c => !c.instructor_id)
 
   return (
     <div className="space-y-5">
+
+      {/* 1. 미배정 학생 — 최상단 */}
+      {unassigned.length > 0 && (
+        <section className="space-y-2">
+          <h3 className="text-sm font-semibold text-gray-700">
+            미배정 <span className="text-gray-400 font-normal">({unassigned.length})</span>
+          </h3>
+          <p className="text-xs text-gray-400">담당 강사가 없는 오늘 수업 학생입니다. &ldquo;내 반으로&rdquo;를 누르면 이 요일은 내 반으로 고정됩니다.</p>
+          {unassigned.map(c => <AssignableCardItem key={c.id} card={c} />)}
+        </section>
+      )}
+
+      {/* 2. 오늘 수업 */}
       {cards.length > 0 && (
         <p className="text-sm">
           오늘 미입력 <span className="font-bold text-red-500">{todoCount}명</span>
@@ -80,11 +119,25 @@ async function TodayContent() {
         </section>
       ))}
 
-      {unassigned.length > 0 && (
+      {/* 3. 어제 수업 */}
+      {yesterday.students.length > 0 && (
         <section className="space-y-2">
-          <h3 className="text-sm font-semibold text-gray-700">오늘 수업 · 미배정 <span className="text-gray-400 font-normal">({unassigned.length})</span></h3>
-          <p className="text-xs text-gray-400">담당 강사가 없는 오늘 수업 학생입니다. &ldquo;내 반으로&rdquo;를 누르면 이 요일은 내 반으로 고정됩니다.</p>
-          {unassigned.map(c => <AssignableCardItem key={c.id} card={c} />)}
+          <h2 className="text-base font-bold text-gray-700">
+            {yesterday.dateLabel}{' '}
+            <span className="text-gray-400 font-normal text-sm">({yesterday.students.length}명)</span>
+          </h2>
+          {yesterday.students.map(s => <PastStudentCard key={s.id} s={s} />)}
+        </section>
+      )}
+
+      {/* 4. 그전날 수업 */}
+      {dayBefore.students.length > 0 && (
+        <section className="space-y-2">
+          <h2 className="text-base font-bold text-gray-700">
+            {dayBefore.dateLabel}{' '}
+            <span className="text-gray-400 font-normal text-sm">({dayBefore.students.length}명)</span>
+          </h2>
+          {dayBefore.students.map(s => <PastStudentCard key={s.id} s={s} />)}
         </section>
       )}
 

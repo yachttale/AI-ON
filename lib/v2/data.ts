@@ -407,6 +407,78 @@ export async function getMyStudents(): Promise<MyStudentRow[]> {
   return [...map.values()].sort((a, b) => a.name.localeCompare(b.name, 'ko'))
 }
 
+// 나의 학생 + 현재 영법 그룹
+export interface MyStudentGroupedRow extends MyStudentRow { currentStrokeKey: string | null }
+export interface MyStudentGroup { key: string; label: string; count: number; students: MyStudentGroupedRow[] }
+
+const MY_GROUP_ORDER = [
+  { key: 'beginner', label: '초보' },
+  { key: 'free', label: '자유형' },
+  { key: 'back', label: '배영' },
+  { key: 'breast', label: '평영' },
+  { key: 'butterfly', label: '접영' },
+  { key: 'master', label: '마스터' },
+]
+
+export async function getMyStudentsGrouped(): Promise<MyStudentGroup[]> {
+  const students = await getMyStudents()
+  if (students.length === 0) return MY_GROUP_ORDER.map(g => ({ ...g, count: 0, students: [] }))
+  const supabase = await createClient()
+  const ids = students.map(s => s.id)
+  const [allSteps, { data: prog }] = await Promise.all([
+    getCachedLadderSteps(),
+    supabase.from('skill_progress').select('student_id,skill_step_id').in('student_id', ids),
+  ])
+  const passedBy = new Map<string, Set<string>>()
+  for (const p of prog ?? []) {
+    if (!passedBy.has(p.student_id)) passedBy.set(p.student_id, new Set())
+    passedBy.get(p.student_id)!.add(p.skill_step_id)
+  }
+  const byKey = new Map<string, MyStudentGroupedRow[]>()
+  for (const s of students) {
+    const strokeKey = computeCurrentStrokeKey(allSteps, passedBy.get(s.id) ?? new Set()) ?? 'beginner'
+    if (!byKey.has(strokeKey)) byKey.set(strokeKey, [])
+    byKey.get(strokeKey)!.push({ ...s, currentStrokeKey: strokeKey })
+  }
+  return MY_GROUP_ORDER.map(g => ({ ...g, count: byKey.get(g.key)?.length ?? 0, students: byKey.get(g.key) ?? [] }))
+}
+
+// 과거 수업일 학생 현황 (어제/그전날)
+export interface PastDayStudentRow { id: string; name: string; grade: string | null; schedule: string | null; attendance: string | null }
+export async function getPastDayStudentsForMe(daysBack: 1 | 2): Promise<{
+  date: string; dateLabel: string; students: PastDayStudentRow[]
+}> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { date: '', dateLabel: '', students: [] }
+  const date = kstDaysAgo(daysBack)
+  const d = new Date(date + 'T12:00:00+09:00')
+  const weekday = d.getDay()
+  const dayNames = ['일', '월', '화', '수', '목', '금', '토']
+  const dateLabel = `${daysBack === 1 ? '어제' : '그저께'} ${d.getMonth() + 1}/${d.getDate()}(${dayNames[weekday]})`
+  // 해당 요일 내 담당 학생 = 고정담당 ∪ 요일배정
+  const [{ data: staticRows }, { data: dayRows }] = await Promise.all([
+    supabase.from('students').select('id,name,grade,schedule').eq('instructor_id', user.id).eq('is_active', true),
+    supabase.from('student_day_instructors').select('student_id').eq('instructor_id', user.id).eq('weekday', weekday),
+  ])
+  const map = new Map<string, MyStudentRow>()
+  for (const s of staticRows ?? []) map.set(s.id, s as MyStudentRow)
+  const dayIds = (dayRows ?? []).map(r => r.student_id).filter(id => !map.has(id))
+  if (dayIds.length) {
+    const { data: extra } = await supabase.from('students').select('id,name,grade,schedule').in('id', dayIds).eq('is_active', true)
+    for (const s of extra ?? []) map.set(s.id, s as MyStudentRow)
+  }
+  if (map.size === 0) return { date, dateLabel, students: [] }
+  const ids = [...map.keys()]
+  const { data: sessions } = await supabase.from('sessions').select('student_id,attendance').eq('session_date', date).in('student_id', ids)
+  const sessionMap = new Map<string, string | null>()
+  for (const s of sessions ?? []) sessionMap.set(s.student_id, s.attendance)
+  const students: PastDayStudentRow[] = [...map.values()]
+    .map(s => ({ ...s, attendance: sessionMap.get(s.id) ?? null }))
+    .sort((a, b) => a.name.localeCompare(b.name, 'ko'))
+  return { date, dateLabel, students }
+}
+
 // 오늘(또는 지정일)이 휴원일인가. 마이그레이션 미적용 시에도 앱이 죽지 않도록 에러는 false로.
 export async function isClosedOn(date: string = todayStr()): Promise<boolean> {
   try {
