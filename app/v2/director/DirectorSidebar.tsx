@@ -3,7 +3,7 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import {
   LayoutDashboard, Users, GraduationCap, MessageSquare,
-  Search, LogOut, ChevronRight,
+  LogOut, ChevronRight, CalendarCheck,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 
@@ -12,6 +12,7 @@ const NAV = [
   { href: '/v2/director/instructors', label: '강사 현황', icon: GraduationCap, exact: false },
   { href: '/v2/director/students', label: '전체 학생', icon: Users, exact: false },
   { href: '/v2/director/feedback', label: '학부모 피드백', icon: MessageSquare, exact: false },
+  { href: '/v2/today', label: '내 수업', icon: CalendarCheck, exact: false },
 ]
 
 export default function DirectorSidebar({ name }: { name: string }) {
