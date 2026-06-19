@@ -2,7 +2,7 @@
 'use client'
 import { useState, useTransition } from 'react'
 import Link from 'next/link'
-import { recordStepToday, recordMeasureToday, markAbsent, passStepAction, assignToMe, confirmSession, acceptReportedStep } from '@/lib/v2/actions'
+import { recordStepToday, recordMeasureToday, markAbsent, passStepAction, assignToMe, confirmSession, acceptReportedStep, markAbsentForDate, recordStepForDate, recordMeasureForDate } from '@/lib/v2/actions'
 import { strokeBadge } from '@/lib/v2/stroke-colors'
 import type { MetricType } from '@/types/v2'
 import type { TodayCard, TodayCardView, TodayChip } from '@/lib/v2/today'
@@ -123,6 +123,113 @@ function Chip({ studentId, chip }: { studentId: string; chip: TodayChip }) {
         {rec && !passed && '✓ '}{chip.label}
       </button>
       {/* 완주 핀: 오늘 기록됐고 아직 미통과인 ladder/counter */}
+      {canPass && rec && !open && (
+        <button disabled={pending} onClick={doPass}
+          className="absolute -top-1.5 -right-1.5 px-1.5 py-0.5 rounded-full bg-blue-600 text-white text-[10px] font-bold shadow">완주</button>
+      )}
+      {open && hasMeasure && (
+        <div className="mt-1 flex items-center gap-1">
+          {chip.measure_spec.includes('time_sec') && (
+            <input value={time} onChange={e => setTime(e.target.value)} inputMode="numeric" placeholder="초"
+              className="w-12 border rounded px-1 py-1 text-xs" />
+          )}
+          {chip.measure_spec.includes('stroke_count') && (
+            <input value={strokes} onChange={e => setStrokes(e.target.value)} inputMode="numeric" placeholder="스트로크"
+              className="w-16 border rounded px-1 py-1 text-xs" />
+          )}
+          <button disabled={pending} onClick={saveMeasure} className="px-2 py-1 rounded bg-blue-500 text-white text-xs">저장</button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// 과거 날짜 카드 (어제/그전날) — date-aware 액션 사용
+export function PastDayCardItem({ card, date }: { card: TodayCardView; date: string }) {
+  const [pending, start] = useTransition()
+  const [absent, setAbsent] = useState(card.absent)
+  const badge = strokeBadge(card.focusStrokeKey)
+  const recorded = card.chips.filter(c => c.recordedToday || c.passedToday).map(c => c.label)
+
+  const bg = absent ? 'bg-red-50 border-red-300'
+    : card.recordedToday ? 'bg-green-50 border-l-4 border-l-green-500'
+    : 'bg-white'
+
+  return (
+    <div className={`rounded-xl border shadow-sm overflow-hidden ${bg}`}>
+      <div className={`h-1 w-full ${badge.bar}`} />
+      <div className="px-4 pt-3 pb-1">
+        <div className="flex items-start justify-between gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-xl font-bold text-gray-900">{card.name}</span>
+            <span className="text-xs text-gray-500">{card.schedule ?? ''}</span>
+            {card.focusStrokeLabel && (
+              <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${badge.badge}`}>{card.focusStrokeLabel}</span>
+            )}
+          </div>
+          <Link href={`/v2/student/${card.id}/progress`} className="shrink-0 text-xs text-gray-400 border rounded px-2 py-1">진도→</Link>
+        </div>
+      </div>
+      {absent ? (
+        <p className="px-4 py-6 text-center text-red-500 font-bold">결석</p>
+      ) : (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 px-3 py-3">
+          {card.chips.map(chip => <PastChip key={chip.id} studentId={card.id} chip={chip} date={date} />)}
+          {card.chips.length === 0 && <p className="col-span-full text-xs text-gray-400 py-2">표시할 단계가 없습니다</p>}
+        </div>
+      )}
+      <div className="flex items-center justify-between gap-2 px-4 py-2 border-t bg-black/[0.02]">
+        <p className="text-xs text-gray-500 truncate">
+          {recorded.length > 0
+            ? <>기록 <span className="text-gray-700">{recorded.join(', ')}</span></>
+            : <span className="text-gray-300">기록 없음</span>}
+        </p>
+        <button
+          disabled={pending}
+          onClick={() => { const v = !absent; setAbsent(v); start(() => markAbsentForDate(card.id, v, date)) }}
+          className={`shrink-0 px-3 py-1 rounded-lg text-xs font-semibold ${absent ? 'bg-red-500 text-white' : 'bg-gray-100 text-gray-500'}`}>
+          결석
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function PastChip({ studentId, chip, date }: { studentId: string; chip: TodayChip; date: string }) {
+  const [pending, start] = useTransition()
+  const [rec, setRec] = useState(chip.recordedToday)
+  const [passed, setPassed] = useState(chip.passed)
+  const [open, setOpen] = useState(false)
+  const [time, setTime] = useState('')
+  const [strokes, setStrokes] = useState('')
+
+  const hasMeasure = chip.measure_spec.length > 0
+  const canPass = !passed && (chip.step_kind === 'ladder' || chip.step_kind === 'counter')
+  const snap = { id: chip.id, key: chip.key, ladder_order: chip.ladder_order }
+
+  const toggleRecord = () => {
+    if (hasMeasure) { setOpen(o => !o); return }
+    const v = !rec; setRec(v); start(() => recordStepForDate(studentId, chip.id, date))
+  }
+  const saveMeasure = () => {
+    const jobs: { metric: MetricType; value: number }[] = []
+    if (chip.step_kind === 'repeatable') jobs.push({ metric: 'laps', value: 1 })
+    if (chip.measure_spec.includes('time_sec') && time) jobs.push({ metric: 'time_sec', value: Number(time) })
+    if (chip.measure_spec.includes('stroke_count') && strokes) jobs.push({ metric: 'stroke_count', value: Number(strokes) })
+    if (jobs.length === 0) return
+    setRec(true); setOpen(false)
+    start(async () => { for (const j of jobs) await recordMeasureForDate(studentId, chip.id, j.metric, j.value, date) })
+    setTime(''); setStrokes('')
+  }
+  const doPass = () => { setPassed(true); start(() => passStepAction(studentId, snap)) }
+
+  const state = passed ? 'bg-gray-200 text-gray-400 line-through' : rec ? 'bg-green-500 text-white' : 'bg-white border'
+  return (
+    <div className="relative">
+      <button disabled={pending} onClick={toggleRecord}
+        className={`w-full min-h-[44px] px-2 py-2 rounded-lg text-xs font-medium text-left leading-tight ${state}`}>
+        {rec && !passed && '✓ '}{chip.label}
+      </button>
       {canPass && rec && !open && (
         <button disabled={pending} onClick={doPass}
           className="absolute -top-1.5 -right-1.5 px-1.5 py-0.5 rounded-full bg-blue-600 text-white text-[10px] font-bold shadow">완주</button>

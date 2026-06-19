@@ -2,7 +2,7 @@
 'use server'
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
-import { kstToday, kstWeekday } from '@/lib/v2/now'
+import { kstToday, kstWeekday, kstDaysAgo } from '@/lib/v2/now'
 import type { Attendance, MetricType, Difficulty } from '@/types/v2'
 
 async function ctx() {
@@ -197,6 +197,69 @@ export async function markAbsent(studentId: string, absent: boolean) {
   const { supabase, userId } = await ctx(); await assertOwns(supabase, userId, studentId)
   const { error } = await supabase.from('sessions')
     .upsert({ student_id: studentId, instructor_id: userId, session_date: today(), attendance: absent ? '결석' : '출석' }, { onConflict: 'student_id,session_date' })
+  if (error) throw error
+  revalidatePath('/v2/today')
+}
+
+// 과거 날짜 기록 (어제/그전날) — 최대 2일 전까지만 허용 (3일 이상 → 잠금)
+function validateRecordDate(date: string) {
+  const cutoff = kstDaysAgo(2)
+  if (date < cutoff) throw new Error('기록 기간이 지났습니다 (최대 2일 전까지)')
+}
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function ensureSessionForDate(supabase: any, userId: string, studentId: string, date: string): Promise<string> {
+  const { data: existing } = await supabase.from('sessions').select('id').eq('student_id', studentId).eq('session_date', date).maybeSingle()
+  if (existing) return existing.id
+  const { data, error } = await supabase.from('sessions')
+    .insert({ student_id: studentId, instructor_id: userId, session_date: date, attendance: '출석' })
+    .select('id').single()
+  if (error) throw error
+  return data.id
+}
+async function assertOwnsForDate(supabase: Awaited<ReturnType<typeof createClient>>, userId: string, studentId: string, date: string) {
+  const { data: prof } = await supabase.from('profiles').select('role').eq('id', userId).maybeSingle()
+  if (prof?.role === 'director') return
+  const { data: s } = await supabase.from('students').select('instructor_id').eq('id', studentId).maybeSingle()
+  if (s?.instructor_id === userId) return
+  const weekday = new Date(date + 'T12:00:00+09:00').getDay()
+  const { data: a } = await supabase.from('student_day_instructors')
+    .select('instructor_id').eq('student_id', studentId).eq('weekday', weekday).maybeSingle()
+  if (a?.instructor_id === userId) return
+  throw new Error('Forbidden')
+}
+export async function markAbsentForDate(studentId: string, absent: boolean, date: string) {
+  validateRecordDate(date)
+  const { supabase, userId } = await ctx(); await assertOwnsForDate(supabase, userId, studentId, date)
+  const { error } = await supabase.from('sessions')
+    .upsert({ student_id: studentId, instructor_id: userId, session_date: date, attendance: absent ? '결석' : '출석' }, { onConflict: 'student_id,session_date' })
+  if (error) throw error
+  revalidatePath('/v2/today')
+}
+export async function recordStepForDate(studentId: string, stepId: string, date: string) {
+  validateRecordDate(date)
+  const { supabase, userId } = await ctx(); await assertOwnsForDate(supabase, userId, studentId, date)
+  const sessionId = await ensureSessionForDate(supabase, userId, studentId, date)
+  const { data: existing } = await supabase.from('measurements').select('id')
+    .eq('student_id', studentId).eq('skill_step_id', stepId).eq('metric_type', 'attempt').eq('measured_on', date)
+  if (existing && existing.length > 0) {
+    const { error } = await supabase.from('measurements').delete()
+      .eq('student_id', studentId).eq('skill_step_id', stepId).eq('metric_type', 'attempt').eq('measured_on', date)
+    if (error) throw error
+  } else {
+    const { error } = await supabase.from('measurements').insert({
+      student_id: studentId, metric_type: 'attempt', value: 1, measured_on: date, session_id: sessionId, skill_step_id: stepId, instructor_id: userId,
+    })
+    if (error) throw error
+  }
+  revalidatePath('/v2/today')
+}
+export async function recordMeasureForDate(studentId: string, stepId: string, metric: MetricType, value: number, date: string) {
+  validateRecordDate(date)
+  const { supabase, userId } = await ctx(); await assertOwnsForDate(supabase, userId, studentId, date)
+  const sessionId = await ensureSessionForDate(supabase, userId, studentId, date)
+  const { error } = await supabase.from('measurements').insert({
+    student_id: studentId, metric_type: metric, value, measured_on: date, session_id: sessionId, skill_step_id: stepId, instructor_id: userId,
+  })
   if (error) throw error
   revalidatePath('/v2/today')
 }

@@ -1,11 +1,9 @@
-// app/v2/today/page.tsx — 오늘 수업: 미배정 최상단 → 오늘 → 어제 → 그전날
+// app/v2/today/page.tsx — 오늘 수업: 미배정 최상단 → 오늘 → 어제 → 그전날 (최대 2일 수정 가능)
 import { Suspense } from 'react'
-import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
-import { getTodayStudentsRaw, enrichMineCards, isClosedOn, getPastDayStudentsForMe } from '@/lib/v2/data'
+import { getTodayStudentsRaw, enrichMineCards, isClosedOn, getPastDayStudentsForMe, enrichPastDayStudents } from '@/lib/v2/data'
 import { buildTodayCards, groupCardsByHour } from '@/lib/v2/today'
-import { TodayCardItem, AssignableCardItem } from './parts'
-import type { PastDayStudentRow } from '@/lib/v2/data'
+import { TodayCardItem, AssignableCardItem, PastDayCardItem } from './parts'
 
 function TodaySkeleton() {
   return (
@@ -32,31 +30,6 @@ function hourLabel(hour: number | null): string {
   return `${h}시 수업`
 }
 
-function PastStudentCard({ s }: { s: PastDayStudentRow }) {
-  const isAbsent = s.attendance === '결석'
-  const hasRecord = s.attendance !== null
-  return (
-    <Link
-      href={`/v2/student/${s.id}`}
-      className={`flex items-center justify-between rounded-xl border px-4 py-3 ${
-        isAbsent ? 'bg-red-50 border-red-200' : hasRecord ? 'bg-green-50 border-green-200' : 'bg-white'
-      }`}
-    >
-      <div>
-        <p className="font-medium text-gray-800">{s.name}</p>
-        <p className="text-xs text-gray-400">{s.schedule ?? ''}{s.grade ? ` · ${s.grade}` : ''}</p>
-      </div>
-      <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
-        isAbsent ? 'bg-red-100 text-red-600'
-        : hasRecord ? 'bg-green-100 text-green-700'
-        : 'bg-gray-100 text-gray-400'
-      }`}>
-        {isAbsent ? '결석' : hasRecord ? '기록됨' : '미기록'}
-      </span>
-    </Link>
-  )
-}
-
 async function TodayContent() {
   const supabase = await createClient()
   const [{ data: { user } }, isClosed, todayRaw, yesterday, dayBefore] = await Promise.all([
@@ -79,7 +52,11 @@ async function TodayContent() {
 
   const { students, sessionById, reportedStepById } = todayRaw
   const { mine, assignable } = buildTodayCards(students, sessionById, user!.id, undefined, reportedStepById)
-  const cards = await enrichMineCards(mine)
+  const [cards, yesterdayCards, dayBeforeCards] = await Promise.all([
+    enrichMineCards(mine),
+    enrichPastDayStudents(yesterday.students, yesterday.date),
+    enrichPastDayStudents(dayBefore.students, dayBefore.date),
+  ])
   const groups = groupCardsByHour(cards)
   const todoCount = cards.filter(c => !c.recordedToday && !c.absent).length
   const unassigned = assignable.filter(c => !c.instructor_id)
@@ -120,24 +97,24 @@ async function TodayContent() {
       ))}
 
       {/* 3. 어제 수업 */}
-      {yesterday.students.length > 0 && (
-        <section className="space-y-2">
+      {yesterdayCards.length > 0 && (
+        <section className="space-y-3">
           <h2 className="text-base font-bold text-gray-700">
             {yesterday.dateLabel}{' '}
-            <span className="text-gray-400 font-normal text-sm">({yesterday.students.length}명)</span>
+            <span className="text-gray-400 font-normal text-sm">({yesterdayCards.length}명)</span>
           </h2>
-          {yesterday.students.map(s => <PastStudentCard key={s.id} s={s} />)}
+          {yesterdayCards.map(c => <PastDayCardItem key={c.id} card={c} date={yesterday.date} />)}
         </section>
       )}
 
       {/* 4. 그전날 수업 */}
-      {dayBefore.students.length > 0 && (
-        <section className="space-y-2">
+      {dayBeforeCards.length > 0 && (
+        <section className="space-y-3">
           <h2 className="text-base font-bold text-gray-700">
             {dayBefore.dateLabel}{' '}
-            <span className="text-gray-400 font-normal text-sm">({dayBefore.students.length}명)</span>
+            <span className="text-gray-400 font-normal text-sm">({dayBeforeCards.length}명)</span>
           </h2>
-          {dayBefore.students.map(s => <PastStudentCard key={s.id} s={s} />)}
+          {dayBeforeCards.map(c => <PastDayCardItem key={c.id} card={c} date={dayBefore.date} />)}
         </section>
       )}
 

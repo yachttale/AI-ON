@@ -3,7 +3,7 @@ import { cache } from 'react'
 import { unstable_cache } from 'next/cache'
 import { createClient as createAnonSupabase } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/server'
-import type { SkillStep, SkillProgress, Measurement, ProgressSource } from '@/types/v2'
+import type { SkillStep, SkillProgress, Measurement, ProgressSource, Attendance } from '@/types/v2'
 import type { TodayStudent, TodaySession, TodayCard, TodayCardView } from './today'
 import { buildTodayCardView } from './today'
 import { buildStrokeLadders, selectCardWindow, type LadderInputStep, type StrokeLadderView } from './ladder'
@@ -382,6 +382,51 @@ export async function enrichMineCards(cards: TodayCard[]): Promise<TodayCardView
       inputs, passedBy.get(c.id) ?? new Set(), sourceBy.get(c.id) ?? new Map(), attemptTodayBy.get(c.id) ?? new Map(),
     )
     return buildTodayCardView(c, strokes, recordedTodayBy.get(c.id) ?? new Set(), passedTodayBy.get(c.id) ?? new Set())
+  })
+}
+
+// 과거 날짜 학생 카드 보강 (enrichMineCards의 날짜 파라미터 버전)
+function toPastCard(s: PastDayStudentRow): TodayCard {
+  return {
+    id: s.id, name: s.name, grade: s.grade, schedule: s.schedule,
+    instructor_id: null, instructor_name: null,
+    attendance: s.attendance as (Attendance | null),
+    laps: null, mine: true, status: null, inputSource: null,
+    reportedStepId: null, reportedStep: null,
+  }
+}
+export async function enrichPastDayStudents(students: PastDayStudentRow[], date: string): Promise<TodayCardView[]> {
+  if (students.length === 0) return []
+  const supabase = await createClient()
+  const ids = students.map(s => s.id)
+  const [inputs, { data: prog }, { data: meas }] = await Promise.all([
+    getCachedLadderSteps(),
+    supabase.from('skill_progress').select('student_id,skill_step_id,source,passed_at').in('student_id', ids),
+    supabase.from('measurements').select('student_id,skill_step_id,metric_type').in('student_id', ids).eq('measured_on', date),
+  ])
+  if (inputs.length === 0) return students.map(s => buildTodayCardView(toPastCard(s), [], new Set(), new Set()))
+  const passedBy = new Map<string, Set<string>>()
+  const sourceBy = new Map<string, Map<string, ProgressSource>>()
+  const passedOnDateBy = new Map<string, Set<string>>()
+  for (const p of prog ?? []) {
+    ;(passedBy.get(p.student_id) ?? passedBy.set(p.student_id, new Set()).get(p.student_id)!).add(p.skill_step_id)
+    ;(sourceBy.get(p.student_id) ?? sourceBy.set(p.student_id, new Map()).get(p.student_id)!).set(p.skill_step_id, p.source)
+    if ((p.passed_at as string | null)?.slice(0, 10) === date)
+      (passedOnDateBy.get(p.student_id) ?? passedOnDateBy.set(p.student_id, new Set()).get(p.student_id)!).add(p.skill_step_id)
+  }
+  const recordedOnDateBy = new Map<string, Set<string>>()
+  const attemptOnDateBy = new Map<string, Map<string, number>>()
+  for (const m of meas ?? []) {
+    if (!m.skill_step_id) continue
+    ;(recordedOnDateBy.get(m.student_id) ?? recordedOnDateBy.set(m.student_id, new Set()).get(m.student_id)!).add(m.skill_step_id)
+    if (m.metric_type === 'attempt') {
+      const map = attemptOnDateBy.get(m.student_id) ?? attemptOnDateBy.set(m.student_id, new Map()).get(m.student_id)!
+      map.set(m.skill_step_id, (map.get(m.skill_step_id) ?? 0) + 1)
+    }
+  }
+  return students.map(s => {
+    const strokes = buildStrokeLadders(inputs, passedBy.get(s.id) ?? new Set(), sourceBy.get(s.id) ?? new Map(), attemptOnDateBy.get(s.id) ?? new Map())
+    return buildTodayCardView(toPastCard(s), strokes, recordedOnDateBy.get(s.id) ?? new Set(), passedOnDateBy.get(s.id) ?? new Set())
   })
 }
 
