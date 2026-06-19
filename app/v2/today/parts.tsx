@@ -2,7 +2,7 @@
 'use client'
 import { useState, useTransition } from 'react'
 import Link from 'next/link'
-import { recordStepToday, recordMeasureToday, markAbsent, passStepAction, assignToMe, confirmSession, acceptReportedStep, markAbsentForDate, recordStepForDate, recordMeasureForDate } from '@/lib/v2/actions'
+import { recordStepToday, recordMeasureToday, markAbsent, passStepAction, assignToMe, confirmSession, acceptReportedStep, markAbsentForDate, recordStepForDate, recordMeasureForDate, unpassStep } from '@/lib/v2/actions'
 import { strokeBadge } from '@/lib/v2/stroke-colors'
 import type { MetricType } from '@/types/v2'
 import type { TodayCard, TodayCardView, TodayChip } from '@/lib/v2/today'
@@ -91,6 +91,7 @@ function Chip({ studentId, chip }: { studentId: string; chip: TodayChip }) {
   const [pending, start] = useTransition()
   const [rec, setRec] = useState(chip.recordedToday)
   const [passed, setPassed] = useState(chip.passed)
+  const [canUndo, setCanUndo] = useState(chip.passedToday)  // 오늘 통과한 경우만 취소 허용
   const [open, setOpen] = useState(false)
   const [time, setTime] = useState(''); const [strokes, setStrokes] = useState('')
 
@@ -99,7 +100,7 @@ function Chip({ studentId, chip }: { studentId: string; chip: TodayChip }) {
   const snap = { id: chip.id, key: chip.key, ladder_order: chip.ladder_order }
 
   const toggleRecord = () => {
-    if (hasMeasure) { setOpen(o => !o); return }      // 측정 스텝: 입력 패널 토글
+    if (hasMeasure) { setOpen(o => !o); return }
     const v = !rec; setRec(v); start(() => recordStepToday(studentId, chip.id))
   }
   const saveMeasure = () => {
@@ -112,13 +113,14 @@ function Chip({ studentId, chip }: { studentId: string; chip: TodayChip }) {
     start(async () => { for (const j of jobs) await recordMeasureToday(studentId, chip.id, j.metric, j.value) })
     setTime(''); setStrokes('')
   }
-  const doPass = () => { setPassed(true); start(() => passStepAction(studentId, snap)) }
+  const doPass = () => { setPassed(true); setCanUndo(true); start(() => passStepAction(studentId, snap)) }
+  const doUnpass = () => { setPassed(false); setRec(false); setCanUndo(false); start(() => unpassStep(studentId, chip.id)) }
 
   const state = passed ? 'bg-gray-200 text-gray-400 line-through' : rec ? 'bg-green-500 text-white' : 'bg-white border'
 
   return (
     <div className="relative">
-      <button disabled={pending} onClick={toggleRecord}
+      <button disabled={pending} onClick={passed ? undefined : toggleRecord}
         className={`w-full min-h-[44px] px-2 py-2 rounded-lg text-xs font-medium text-left leading-tight ${state}`}>
         {rec && !passed && '✓ '}{chip.label}
       </button>
@@ -126,6 +128,11 @@ function Chip({ studentId, chip }: { studentId: string; chip: TodayChip }) {
       {canPass && rec && !open && (
         <button disabled={pending} onClick={doPass}
           className="absolute -top-1.5 -right-1.5 px-1.5 py-0.5 rounded-full bg-blue-600 text-white text-[10px] font-bold shadow">완주</button>
+      )}
+      {/* 취소 핀: 오늘 통과한 경우만 — 잘못 누른 경우 되돌리기 */}
+      {passed && canUndo && (
+        <button disabled={pending} onClick={doUnpass}
+          className="absolute -top-1.5 -right-1.5 px-1.5 py-0.5 rounded-full bg-red-500 text-white text-[10px] font-bold shadow">↩</button>
       )}
       {open && hasMeasure && (
         <div className="mt-1 flex items-center gap-1">
@@ -199,6 +206,7 @@ function PastChip({ studentId, chip, date }: { studentId: string; chip: TodayChi
   const [pending, start] = useTransition()
   const [rec, setRec] = useState(chip.recordedToday)
   const [passed, setPassed] = useState(chip.passed)
+  const [canUndo, setCanUndo] = useState(chip.passedToday)
   const [open, setOpen] = useState(false)
   const [time, setTime] = useState('')
   const [strokes, setStrokes] = useState('')
@@ -221,18 +229,23 @@ function PastChip({ studentId, chip, date }: { studentId: string; chip: TodayChi
     start(async () => { for (const j of jobs) await recordMeasureForDate(studentId, chip.id, j.metric, j.value, date) })
     setTime(''); setStrokes('')
   }
-  const doPass = () => { setPassed(true); start(() => passStepAction(studentId, snap)) }
+  const doPass = () => { setPassed(true); setCanUndo(true); start(() => passStepAction(studentId, snap)) }
+  const doUnpass = () => { setPassed(false); setRec(false); setCanUndo(false); start(() => unpassStep(studentId, chip.id)) }
 
   const state = passed ? 'bg-gray-200 text-gray-400 line-through' : rec ? 'bg-green-500 text-white' : 'bg-white border'
   return (
     <div className="relative">
-      <button disabled={pending} onClick={toggleRecord}
+      <button disabled={pending} onClick={passed ? undefined : toggleRecord}
         className={`w-full min-h-[44px] px-2 py-2 rounded-lg text-xs font-medium text-left leading-tight ${state}`}>
         {rec && !passed && '✓ '}{chip.label}
       </button>
       {canPass && rec && !open && (
         <button disabled={pending} onClick={doPass}
           className="absolute -top-1.5 -right-1.5 px-1.5 py-0.5 rounded-full bg-blue-600 text-white text-[10px] font-bold shadow">완주</button>
+      )}
+      {passed && canUndo && (
+        <button disabled={pending} onClick={doUnpass}
+          className="absolute -top-1.5 -right-1.5 px-1.5 py-0.5 rounded-full bg-red-500 text-white text-[10px] font-bold shadow">↩</button>
       )}
       {open && hasMeasure && (
         <div className="mt-1 flex items-center gap-1">

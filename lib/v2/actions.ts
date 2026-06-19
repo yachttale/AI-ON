@@ -372,6 +372,19 @@ export async function childReportActivity(studentId: string, reportedStepId: str
   revalidatePath(`/kiosk`)
 }
 
+// 오늘 통과 취소 — 오늘 기록된 observed 통과만 삭제 (어제 이전 통과는 건드리지 않음)
+export async function unpassStep(studentId: string, stepId: string) {
+  const { supabase, userId } = await ctx(); await assertOwns(supabase, userId, studentId)
+  const { error } = await supabase.from('skill_progress')
+    .delete()
+    .eq('student_id', studentId)
+    .eq('skill_step_id', stepId)
+    .eq('passed_at', today())
+    .eq('source', 'observed')
+  if (error) throw error
+  revalidatePath('/v2/today'); revalidatePath(`/v2/student/${studentId}`)
+}
+
 // 오늘 해당 step의 laps 측정 최신 1행 삭제 (잘못 누른 경우 취소용)
 export async function removeLastLap(studentId: string, stepId: string) {
   const { supabase, userId } = await ctx(); await assertOwns(supabase, userId, studentId)
