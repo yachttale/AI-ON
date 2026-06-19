@@ -13,6 +13,16 @@ import type { DashboardInput } from './dashboard'
 
 const todayStr = kstToday
 
+export function computeCurrentStrokeKey(
+  allSteps: { id: string; step_kind: string; stroke_key: string }[],
+  passedIds: Set<string>,
+): string | null {
+  if (passedIds.size === 0) return null
+  const first = allSteps.find(s => s.step_kind === 'ladder' && !passedIds.has(s.id))
+  if (first) return first.stroke_key
+  return 'master'
+}
+
 // 쿠키 없는 Supabase 클라이언트 (커리큘럼 읽기 전용, RLS 미적용 — anon select 정책 019)
 function createAnonClient() {
   return createAnonSupabase(
@@ -307,8 +317,7 @@ export async function getDashboardRaw(): Promise<{
   // 4) 각 학생 현재 영법 인메모리 계산 (첫 미통과 단계의 stroke_key)
   const students = baseStudents.map(s => {
     const passed = passedByStudent.get(s.id) ?? new Set()
-    const currentStep = allSteps.find(step => step.step_kind === 'ladder' && !passed.has(step.id))
-    return { id: s.id, name: s.name, currentStrokeKey: currentStep?.stroke_key ?? null }
+    return { id: s.id, name: s.name, currentStrokeKey: computeCurrentStrokeKey(allSteps, passed) }
   })
 
   // 5) 오늘 pending 세션 수
@@ -418,7 +427,7 @@ export interface InstructorStat {
   withdrawn: number; withdrawalRate: number  // 퇴원 수 / 비율(%)
   recentPasses: number                 // 최근 7일 통과 수(baseline 제외)
 }
-export interface DirectorStudentRow { id: string; name: string; passed: number; total: number; instructorName: string | null }
+export interface DirectorStudentRow { id: string; name: string; passed: number; total: number; instructorName: string | null; currentStrokeKey: string | null }
 export interface DirectorStrokeGroup { stroke_key: string; stroke_label: string; students: DirectorStudentRow[] }
 export interface DirectorDashboard {
   totalStudents: number; totalInstructors: number
@@ -470,10 +479,13 @@ export async function getDirectorDashboard(): Promise<DirectorDashboard> {
 
   // 학생별 영법별 통과(ladder) 수 (활성 학생 진행 그룹용)
   const passedByStroke = new Map<string, Map<string, number>>()
+  // 학생별 전체 통과 step id Set (currentStrokeKey 계산용)
+  const passedByStudent = new Map<string, Set<string>>()
   for (const p of prog ?? []) {
     const sk = stepStroke.get(p.skill_step_id); if (!sk) continue
     const m = passedByStroke.get(p.student_id) ?? passedByStroke.set(p.student_id, new Map()).get(p.student_id)!
     m.set(sk, (m.get(sk) ?? 0) + 1)
+    ;(passedByStudent.get(p.student_id) ?? passedByStudent.set(p.student_id, new Set()).get(p.student_id)!).add(p.skill_step_id)
   }
 
   // 강사별 스코어카드: 담당·퇴원·최근통과 + 오늘 입력 현황
@@ -522,7 +534,7 @@ export async function getDirectorDashboard(): Promise<DirectorDashboard> {
       const rows: DirectorStudentRow[] = studentList
         .map(s => ({ s, passed: passedByStroke.get(s.id)?.get(sk) ?? 0 }))
         .filter(({ passed }) => passed > 0 && passed < total)
-        .map(({ s, passed }) => ({ id: s.id, name: s.name, passed, total, instructorName: ownerName(s) }))
+        .map(({ s, passed }) => ({ id: s.id, name: s.name, passed, total, instructorName: ownerName(s), currentStrokeKey: computeCurrentStrokeKey(inputs, passedByStudent.get(s.id) ?? new Set()) }))
       return { stroke_key: sk, stroke_label: strokeMeta.get(sk)!, students: rows }
     })
     .filter(g => g.students.length > 0)
@@ -542,6 +554,7 @@ export interface DirectorRosterRow {
   instructorName: string | null
   focusStrokeKey: string | null; focusStrokeLabel: string | null
   currentStepLabel: string | null; passedLadder: number
+  currentStrokeKey: string | null
 }
 export async function getDirectorRoster(): Promise<DirectorRosterRow[]> {
   const supabase = await createClient()
@@ -572,6 +585,7 @@ export async function getDirectorRoster(): Promise<DirectorRosterRow[]> {
       instructorName: nameById.get(s.instructor_id ?? dayInstrAny.get(s.id) ?? '') ?? null,
       focusStrokeKey: focus?.stroke_key ?? null, focusStrokeLabel: focus?.stroke_label ?? null,
       currentStepLabel, passedLadder,
+      currentStrokeKey: computeCurrentStrokeKey(inputs, passed),
     }
   })
 }
