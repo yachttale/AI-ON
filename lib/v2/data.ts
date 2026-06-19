@@ -531,6 +531,7 @@ export async function getPastDayStudentsForMe(daysBack: 1 | 2): Promise<{
   const sessionMap = new Map<string, string | null>()
   for (const s of sessions ?? []) sessionMap.set(s.student_id, s.attendance)
   const students: PastDayStudentRow[] = [...map.values()]
+    .filter(s => s.schedule && getTodayEntries(s.schedule, weekday).length > 0)
     .map(s => ({ ...s, attendance: sessionMap.get(s.id) ?? null }))
     .sort((a, b) => a.name.localeCompare(b.name, 'ko'))
   return { date, dateLabel, students }
