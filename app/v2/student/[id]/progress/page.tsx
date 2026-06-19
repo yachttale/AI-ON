@@ -3,17 +3,36 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import { getStrokeLadders } from '@/lib/v2/data'
 import { StepControl } from '../StepControl'
+import { UnassignButton } from '../UnassignButton'
+import { kstWeekday } from '@/lib/v2/now'
 
 export default async function ProgressPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const supabase = await createClient()
-  const { data: student } = await supabase.from('students').select('name,grade').eq('id', id).single()
+  const [{ data: student }, { data: { user } }] = await Promise.all([
+    supabase.from('students').select('name,grade').eq('id', id).single(),
+    supabase.auth.getUser(),
+  ])
+  const { data: profile } = await supabase.from('profiles').select('role').eq('id', user!.id).single()
+  const isDirector = profile?.role === 'director'
+
+  // 오늘 요일 배정으로 내 반에 온 학생인지 확인
+  const weekday = kstWeekday()
+  const { data: dayAssign } = isDirector ? { data: null } : await supabase
+    .from('student_day_instructors')
+    .select('instructor_id')
+    .eq('student_id', id)
+    .eq('weekday', weekday)
+    .eq('instructor_id', user!.id)
+    .maybeSingle()
+
   const strokes = await getStrokeLadders(id)
   return (
     <div className="space-y-4">
       <div className="flex justify-between items-center">
         <h2 className="text-lg font-bold text-gray-800">{student?.name} 진도</h2>
-        <div className="flex gap-3 text-xs">
+        <div className="flex gap-3 items-center text-xs">
+          {dayAssign && <UnassignButton studentId={id} />}
           <Link href={`/v2/student/${id}`} className="text-gray-400">대시보드</Link>
           <Link href={`/v2/student/${id}/baseline`} className="text-blue-500">기준 배치</Link>
         </div>

@@ -67,6 +67,21 @@ export async function assignToMe(studentId: string) {
   revalidatePath('/v2/today')
 }
 
+// assignToMe 취소: 오늘 요일 배정(student_day_instructors)만 삭제. 고정 instructor_id 는 건드리지 않음.
+export async function unassignFromDay(studentId: string) {
+  const { supabase, userId } = await ctx()
+  const weekday = kstWeekday()
+  const { error } = await supabase.from('student_day_instructors')
+    .delete()
+    .eq('student_id', studentId)
+    .eq('weekday', weekday)
+    .eq('instructor_id', userId)
+  if (error) throw error
+  revalidatePath('/v2/today')
+  revalidatePath(`/v2/student/${studentId}`)
+  revalidatePath(`/v2/student/${studentId}/progress`)
+}
+
 export async function markAttendance(studentId: string, attendance: Attendance) {
   const { supabase, userId } = await ctx(); await assertOwns(supabase, userId, studentId)
   const { error } = await supabase.from('sessions')
