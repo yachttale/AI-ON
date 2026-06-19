@@ -4,8 +4,8 @@ import { redirect } from 'next/navigation'
 import { getMyStudentsGrouped } from '@/lib/v2/data'
 
 const GROUP_LABELS: Record<string, string> = {
-  beginner: '초보', free: '자유형', back: '배영',
-  breast: '평영', butterfly: '접영', master: '마스터',
+  beginner: '초보', freestyle: '자유형', backstroke: '배영',
+  breaststroke: '평영', butterfly: '접영', master: '마스터',
 }
 
 export default async function StudentGroupPage({ params }: { params: Promise<{ key: string }> }) {

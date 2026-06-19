@@ -18,7 +18,8 @@ export function computeCurrentStrokeKey(
   passedIds: Set<string>,
 ): string | null {
   if (passedIds.size === 0) return null
-  const first = allSteps.find(s => s.step_kind === 'ladder' && !passedIds.has(s.id))
+  // 기타(etc) 단계는 선택 보너스 — 메인 진행 사다리에서 제외
+  const first = allSteps.find(s => s.step_kind === 'ladder' && s.stroke_key !== 'etc' && !passedIds.has(s.id))
   if (first) return first.stroke_key
   return 'master'
 }
@@ -458,9 +459,9 @@ export interface MyStudentGroup { key: string; label: string; count: number; stu
 
 const MY_GROUP_ORDER = [
   { key: 'beginner', label: '초보' },
-  { key: 'free', label: '자유형' },
-  { key: 'back', label: '배영' },
-  { key: 'breast', label: '평영' },
+  { key: 'freestyle', label: '자유형' },
+  { key: 'backstroke', label: '배영' },
+  { key: 'breaststroke', label: '평영' },
   { key: 'butterfly', label: '접영' },
   { key: 'master', label: '마스터' },
 ]
@@ -659,9 +660,9 @@ export async function getDirectorDashboard(): Promise<DirectorDashboard> {
 
   const GROUP_ORDER = [
     { key: 'beginner', label: '초보' },
-    { key: 'free', label: '자유형' },
-    { key: 'back', label: '배영' },
-    { key: 'breast', label: '평영' },
+    { key: 'freestyle', label: '자유형' },
+    { key: 'backstroke', label: '배영' },
+    { key: 'breaststroke', label: '평영' },
     { key: 'butterfly', label: '접영' },
     { key: 'master', label: '마스터' },
   ]
