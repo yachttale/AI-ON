@@ -2,11 +2,12 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
-import { getStudentDashboard, getInstructors } from '@/lib/v2/data'
+import { getStudentDashboard, getInstructors, getStudentMasterStats, computeCurrentStrokeKey, getCachedLadderSteps, getStudentPassedStepIds } from '@/lib/v2/data'
 import { relDayLabel } from '@/lib/v2/now'
 import { StrokeRadar } from './StrokeRadar'
 import { FeedbackDraft } from './FeedbackDraft'
 import { StudentManage } from './StudentManage'
+import { MasterPanel } from './MasterPanel'
 
 const KIND_STYLE: Record<string, string> = {
   pass: 'bg-blue-100 text-blue-700',
@@ -24,6 +25,14 @@ export default async function StudentDashboardPage({ params }: { params: Promise
   const { data: profile } = await supabase.from('profiles').select('role').eq('id', user!.id).single()
   const isDirector = profile?.role === 'director'
   const instructors = isDirector ? await getInstructors() : []
+
+  // 마스터 여부 판단
+  const [allSteps, passedIds] = await Promise.all([
+    getCachedLadderSteps(),
+    getStudentPassedStepIds(id),
+  ])
+  const currentStrokeKey = computeCurrentStrokeKey(allSteps, passedIds)
+  const isMaster = currentStrokeKey === 'master'
 
   return (
     <div className="space-y-4">
@@ -50,22 +59,26 @@ export default async function StudentDashboardPage({ params }: { params: Promise
       <StudentManage studentId={id} isDirector={isDirector} currentInstructorId={d.instructorId}
         instructors={instructors} withdrawalStatus={d.withdrawalStatus} />
 
-      {/* 리포트: 레이더 + 지표 타일 */}
-      <section className="bg-white rounded-2xl border p-4 space-y-4">
-        <h3 className="font-bold text-sm text-gray-700">영법별 성취</h3>
-        {d.radar.length >= 3
-          ? <StrokeRadar data={d.radar} />
-          : <p className="text-xs text-gray-400 text-center py-6">진도 데이터가 쌓이면 레이더가 표시됩니다</p>}
-        <div className="grid grid-cols-3 gap-2 text-center">
-          <Tile label="총 기록 일수" value={`${d.stats.recordDays}`} unit="일" />
-          <Tile label="총 수영 거리" value={d.stats.totalDistanceM.toLocaleString()} unit="m" />
-          <Tile label="하루 평균" value={d.stats.avgDistanceM.toLocaleString()} unit="m" />
-          <Tile label="통과 단계" value={`${d.stats.totalPassed}`} unit="개" accent />
-          <Tile label="출석률" value={`${d.stats.attendanceRate}`} unit="%" />
-          <Tile label="즐겨한 영법" value={d.stats.favoriteStroke ?? '-'} />
-        </div>
-        {km >= 1 && <p className="text-[11px] text-gray-300 text-center">누적 {km.toLocaleString(undefined, { maximumFractionDigits: 1 })}km</p>}
-      </section>
+      {/* 리포트: 마스터 패널 or 레이더 + 지표 타일 */}
+      {isMaster
+        ? <MasterPanel studentId={id} stats={await getStudentMasterStats(id)} />
+        : (
+          <section className="bg-white rounded-2xl border p-4 space-y-4">
+            <h3 className="font-bold text-sm text-gray-700">영법별 성취</h3>
+            {d.radar.length >= 3
+              ? <StrokeRadar data={d.radar} />
+              : <p className="text-xs text-gray-400 text-center py-6">진도 데이터가 쌓이면 레이더가 표시됩니다</p>}
+            <div className="grid grid-cols-3 gap-2 text-center">
+              <Tile label="총 기록 일수" value={`${d.stats.recordDays}`} unit="일" />
+              <Tile label="총 수영 거리" value={d.stats.totalDistanceM.toLocaleString()} unit="m" />
+              <Tile label="하루 평균" value={d.stats.avgDistanceM.toLocaleString()} unit="m" />
+              <Tile label="통과 단계" value={`${d.stats.totalPassed}`} unit="개" accent />
+              <Tile label="출석률" value={`${d.stats.attendanceRate}`} unit="%" />
+              <Tile label="즐겨한 영법" value={d.stats.favoriteStroke ?? '-'} />
+            </div>
+            {km >= 1 && <p className="text-[11px] text-gray-300 text-center">누적 {km.toLocaleString(undefined, { maximumFractionDigits: 1 })}km</p>}
+          </section>
+        )}
 
       {/* 부모 피드백 초안 */}
       <section className="bg-white rounded-2xl border p-4 space-y-2">

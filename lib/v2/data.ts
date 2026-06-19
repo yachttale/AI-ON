@@ -110,7 +110,7 @@ const _fetchLadderSteps = unstable_cache(
 )
 
 // React cache()로 요청 내 중복 제거
-const getCachedLadderSteps = cache(_fetchLadderSteps)
+export const getCachedLadderSteps = cache(_fetchLadderSteps)
 
 // 학생이 통과한 step_id 집합
 export async function getStudentPassedStepIds(studentId: string): Promise<Set<string>> {
