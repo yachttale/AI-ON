@@ -324,7 +324,7 @@ export async function logRepeatable(studentId: string, stepId: string, metric: M
   const sessionId = await ensureSession(supabase, userId, studentId)
   const { error } = await supabase.from('measurements').insert({ student_id: studentId, metric_type: metric, value, measured_on: today(), session_id: sessionId, skill_step_id: stepId, instructor_id: userId })
   if (error) throw error
-  revalidatePath(`/v2/student/${studentId}`)
+  revalidatePath('/v2/today'); revalidatePath(`/v2/student/${studentId}`)
 }
 
 export async function setBaseline(studentId: string, stepIds: string[], snapshots: Record<string, { key: string; ladder_order: number }>) {
@@ -400,7 +400,7 @@ export async function removeLastLap(studentId: string, stepId: string) {
     .limit(1)
   if (!data || data.length === 0) return
   await supabase.from('measurements').delete().eq('id', data[0].id)
-  revalidatePath(`/v2/student/${studentId}`)
+  revalidatePath('/v2/today'); revalidatePath(`/v2/student/${studentId}`)
 }
 
 // 원장 전용: 신규 학생 등록

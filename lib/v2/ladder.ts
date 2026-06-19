@@ -20,7 +20,7 @@ export function buildStrokeLadders(
   attemptById: Map<string, number>,
 ): StrokeLadderView[] {
   const sorted = [...steps].sort((a, b) => a.ladder_order - b.ladder_order)
-  const currentId = sorted.find(s => s.step_kind === 'ladder' && !passedIds.has(s.id))?.id ?? null
+  const currentId = sorted.find(s => s.step_kind === 'ladder' && s.stroke_key !== 'etc' && !passedIds.has(s.id))?.id ?? null
 
   const strokes: StrokeLadderView[] = []
   for (const s of sorted) {

@@ -4,7 +4,7 @@ import { unstable_cache } from 'next/cache'
 import { createClient as createAnonSupabase } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/server'
 import type { SkillStep, SkillProgress, Measurement, ProgressSource, Attendance } from '@/types/v2'
-import type { TodayStudent, TodaySession, TodayCard, TodayCardView } from './today'
+import type { TodayStudent, TodaySession, TodayCard, TodayCardView, MasterLapEntry } from './today'
 import { buildTodayCardView } from './today'
 import { buildStrokeLadders, selectCardWindow, type LadderInputStep, type StrokeLadderView } from './ladder'
 import { getTodayEntries } from '@/lib/schedule'
@@ -360,6 +360,10 @@ export async function enrichMineCards(cards: TodayCard[]): Promise<TodayCardView
     supabase.from('measurements').select('student_id,skill_step_id,metric_type,measured_on').in('student_id', ids).eq('measured_on', today),
   ])
   if (inputs.length === 0) return cards.map(c => buildTodayCardView(c, [], new Set(), new Set()))
+  // 마스터 단계 목록 (repeatable, stroke_key=master, 순서대로)
+  const masterSteps = inputs.filter(s => s.stroke_key === 'master' && s.step_kind === 'repeatable')
+    .sort((a, b) => a.ladder_order - b.ladder_order)
+  const masterStepIdSet = new Set(masterSteps.map(s => s.id))
   // 학생별 통과/오늘통과
   const passedBy = new Map<string, Set<string>>(); const sourceBy = new Map<string, Map<string, ProgressSource>>()
   const passedTodayBy = new Map<string, Set<string>>()
@@ -368,8 +372,9 @@ export async function enrichMineCards(cards: TodayCard[]): Promise<TodayCardView
     ;(sourceBy.get(p.student_id) ?? sourceBy.set(p.student_id, new Map()).get(p.student_id)!).set(p.skill_step_id, p.source)
     if (p.passed_at === today) (passedTodayBy.get(p.student_id) ?? passedTodayBy.set(p.student_id, new Set()).get(p.student_id)!).add(p.skill_step_id)
   }
-  // 학생별 오늘 기록(측정/연습) + 오늘 연습횟수
+  // 학생별 오늘 기록(측정/연습) + 오늘 연습횟수 + 마스터 바퀴수
   const recordedTodayBy = new Map<string, Set<string>>(); const attemptTodayBy = new Map<string, Map<string, number>>()
+  const masterLapsByStudent = new Map<string, Map<string, number>>()
   for (const m of meas ?? []) {
     if (!m.skill_step_id) continue
     ;(recordedTodayBy.get(m.student_id) ?? recordedTodayBy.set(m.student_id, new Set()).get(m.student_id)!).add(m.skill_step_id)
@@ -377,12 +382,18 @@ export async function enrichMineCards(cards: TodayCard[]): Promise<TodayCardView
       const map = attemptTodayBy.get(m.student_id) ?? attemptTodayBy.set(m.student_id, new Map()).get(m.student_id)!
       map.set(m.skill_step_id, (map.get(m.skill_step_id) ?? 0) + 1)
     }
+    if (m.metric_type === 'laps' && masterStepIdSet.has(m.skill_step_id)) {
+      const map = masterLapsByStudent.get(m.student_id) ?? masterLapsByStudent.set(m.student_id, new Map()).get(m.student_id)!
+      map.set(m.skill_step_id, (map.get(m.skill_step_id) ?? 0) + 1)
+    }
   }
   return cards.map(c => {
     const strokes = buildStrokeLadders(
       inputs, passedBy.get(c.id) ?? new Set(), sourceBy.get(c.id) ?? new Map(), attemptTodayBy.get(c.id) ?? new Map(),
     )
-    return buildTodayCardView(c, strokes, recordedTodayBy.get(c.id) ?? new Set(), passedTodayBy.get(c.id) ?? new Set())
+    const lapsMap = masterLapsByStudent.get(c.id) ?? new Map()
+    const masterLaps: MasterLapEntry[] = masterSteps.map(s => ({ stepId: s.id, stepKey: s.key, label: s.track_label, laps: lapsMap.get(s.id) ?? 0 }))
+    return buildTodayCardView(c, strokes, recordedTodayBy.get(c.id) ?? new Set(), passedTodayBy.get(c.id) ?? new Set(), undefined, masterLaps)
   })
 }
 

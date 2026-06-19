@@ -2,17 +2,20 @@
 'use client'
 import { useState, useTransition } from 'react'
 import Link from 'next/link'
-import { passLadderCascade, markAbsent, passStepAction, assignToMe, confirmSession, acceptReportedStep, markAbsentForDate, recordStepForDate, recordMeasureForDate, unpassStep } from '@/lib/v2/actions'
+import { passLadderCascade, markAbsent, passStepAction, assignToMe, confirmSession, acceptReportedStep, markAbsentForDate, recordStepForDate, recordMeasureForDate, unpassStep, logRepeatable, removeLastLap } from '@/lib/v2/actions'
 import { strokeBadge } from '@/lib/v2/stroke-colors'
 import type { MetricType } from '@/types/v2'
-import type { TodayCard, TodayCardView, TodayChip } from '@/lib/v2/today'
+import type { TodayCard, TodayCardView, TodayChip, MasterLapEntry } from '@/lib/v2/today'
 
 export function TodayCardItem({ card }: { card: TodayCardView }) {
   const [pending, start] = useTransition()
   const [absent, setAbsent] = useState(card.absent)
   const badge = strokeBadge(card.focusStrokeKey)
 
-  const recorded = card.chips.filter(c => c.passedToday).map(c => c.label)
+  const isMaster = card.focusStrokeKey === 'master' && card.masterLaps != null
+  const recorded = isMaster
+    ? (card.masterLaps ?? []).filter(e => e.laps > 0).map(e => `${e.label} ${e.laps}바퀴`)
+    : card.chips.filter(c => c.passedToday).map(c => c.label)
   const isPending = card.status === 'pending'      // 아이 패드 입력 — 확인 필요
   const isConfirmed = card.status === 'confirmed'
 
@@ -64,6 +67,10 @@ export function TodayCardItem({ card }: { card: TodayCardView }) {
 
       {absent ? (
         <p className="px-4 py-6 text-center text-red-500 font-bold">결석</p>
+      ) : isMaster ? (
+        <div className="px-3 py-2 space-y-1.5">
+          {card.masterLaps!.map(entry => <MasterLapCounter key={entry.stepKey} studentId={card.id} entry={entry} />)}
+        </div>
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 px-3 py-3">
           {card.chips.map(chip => <Chip key={chip.id} studentId={card.id} chip={chip} />)}
@@ -82,6 +89,30 @@ export function TodayCardItem({ card }: { card: TodayCardView }) {
           결석
         </button>
       </div>
+    </div>
+  )
+}
+
+function MasterLapCounter({ studentId, entry }: { studentId: string; entry: MasterLapEntry }) {
+  const [pending, start] = useTransition()
+  const [laps, setLaps] = useState(entry.laps)
+
+  const inc = () => { setLaps(l => l + 1); start(() => logRepeatable(studentId, entry.stepId, 'laps', 1)) }
+  const dec = () => {
+    if (laps <= 0) return
+    setLaps(l => l - 1); start(() => removeLastLap(studentId, entry.stepId))
+  }
+
+  return (
+    <div className="flex items-center gap-3 px-2 py-2 bg-white rounded-lg border">
+      <button disabled={pending || laps <= 0} onClick={dec}
+        className="w-9 h-9 rounded-full bg-gray-100 text-gray-500 text-xl font-bold flex items-center justify-center disabled:opacity-30 shrink-0">−</button>
+      <div className="flex-1 flex items-center justify-between">
+        <span className="text-sm font-semibold text-gray-700">{entry.label}</span>
+        <span className="text-xl font-bold text-gray-900 tabular-nums">{laps}<span className="text-sm font-normal text-gray-400 ml-0.5">바퀴</span></span>
+      </div>
+      <button disabled={pending} onClick={inc}
+        className="w-9 h-9 rounded-full bg-blue-500 text-white text-xl font-bold flex items-center justify-center disabled:opacity-50 shrink-0">+</button>
     </div>
   )
 }

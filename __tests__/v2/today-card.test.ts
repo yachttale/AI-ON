@@ -53,7 +53,7 @@ describe('buildTodayCardView', () => {
 describe('groupCardsByHour', () => {
   const mk = (id: string, hour: number | null, done: boolean): TodayCardView => ({
     ...baseCard, id, classHour: hour, focusStrokeKey: null, focusStrokeLabel: null,
-    recentPassed: [], chips: [], recordedToday: done, absent: false,
+    recentPassed: [], chips: [], recordedToday: done, absent: false, masterLaps: null,
   })
   it('현재 이후 그룹 먼저, 지난 그룹 뒤로, 그룹 내 미입력 먼저', () => {
     const groups = groupCardsByHour([mk('p', 14, false), mk('n', 17, true), mk('c', 16, false)], 16)

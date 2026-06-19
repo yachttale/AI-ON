@@ -65,6 +65,9 @@ export interface TodayChip {
   passedToday: boolean     // 오늘 통과
   isCurrent: boolean       // 현재 단계(사다리 첫 미통과)
 }
+export interface MasterLapEntry {
+  stepId: string; stepKey: string; label: string; laps: number
+}
 export interface TodayCardView extends TodayCard {
   classHour: number | null
   focusStrokeKey: string | null
@@ -73,6 +76,7 @@ export interface TodayCardView extends TodayCard {
   chips: TodayChip[]
   recordedToday: boolean   // 오늘 기록 ≥1 → 초록
   absent: boolean
+  masterLaps: MasterLapEntry[] | null
 }
 
 // 학생의 오늘 첫(또는 유일) 수업 시간(24h). 그룹핑·정렬용.
@@ -90,6 +94,7 @@ export function buildTodayCardView(
   todayRecordedIds: Set<string>,
   todayPassedIds: Set<string>,
   todayJsDay: number = kstWeekday(),
+  masterLaps?: MasterLapEntry[],
 ): TodayCardView {
   const { focus, steps } = selectCardWindow(strokes, { keepPassedIds: todayPassedIds })
   const chips: TodayChip[] = steps.map((s: LadderStepView) => ({
@@ -112,6 +117,7 @@ export function buildTodayCardView(
     focusStrokeKey: focus?.stroke_key ?? null,
     focusStrokeLabel: focus?.stroke_label ?? null,
     recentPassed, chips, recordedToday, absent,
+    masterLaps: masterLaps ?? null,
   }
 }
 
