@@ -10,6 +10,7 @@ import type { TodayCard, TodayCardView, TodayChip, MasterLapEntry } from '@/lib/
 export function TodayCardItem({ card }: { card: TodayCardView }) {
   const [pending, start] = useTransition()
   const [absent, setAbsent] = useState(card.absent)
+  const [showGrid, setShowGrid] = useState(false)
   const badge = strokeBadge(card.focusStrokeKey)
 
   const isMaster = card.focusStrokeKey === 'master' && card.masterLaps != null
@@ -72,10 +73,31 @@ export function TodayCardItem({ card }: { card: TodayCardView }) {
           {card.masterLaps!.map(entry => <MasterLapCounter key={entry.stepKey} studentId={card.id} entry={entry} />)}
         </div>
       ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 px-3 py-3">
-          {card.chips.map(chip => <Chip key={chip.id} studentId={card.id} chip={chip} />)}
-          {card.chips.length === 0 && <p className="col-span-full text-xs text-gray-400 py-2">표시할 단계가 없습니다</p>}
-        </div>
+        <>
+          {/* 슬라이드 — 가로 스크롤로 단계 탐색, 탭하면 바로 통과 */}
+          <div className="flex gap-2 overflow-x-auto px-3 pt-3 pb-1 [-webkit-overflow-scrolling:touch]">
+            {card.chips.map(chip => (
+              <div key={chip.id} className="min-w-[120px] shrink-0">
+                <Chip studentId={card.id} chip={chip} />
+              </div>
+            ))}
+            {card.chips.length === 0 && <p className="text-xs text-gray-400 py-3">표시할 단계가 없습니다</p>}
+          </div>
+          {/* 기록 입력 — 전체 단계 그리드 토글 */}
+          {card.chips.length > 0 && (
+            <div className="px-3 pb-2">
+              <button onClick={() => setShowGrid(g => !g)}
+                className="text-xs text-gray-400 hover:text-gray-600 flex items-center gap-1 py-1">
+                기록 입력 {showGrid ? '▴' : '▾'}
+              </button>
+            </div>
+          )}
+          {showGrid && (
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 px-3 pb-3">
+              {card.chips.map(chip => <Chip key={chip.id} studentId={card.id} chip={chip} />)}
+            </div>
+          )}
+        </>
       )}
 
       <div className="flex items-center justify-between gap-2 px-4 py-2 border-t bg-black/[0.02]">
