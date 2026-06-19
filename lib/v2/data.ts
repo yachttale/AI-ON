@@ -741,6 +741,51 @@ export async function getStudentDashboard(studentId: string): Promise<StudentDas
   }
 }
 
+export interface MasterStrokeStats {
+  stepId: string
+  strokeKey: string
+  strokeLabel: string
+  todayLaps: number
+  totalLaps: number
+  totalDistanceM: number
+}
+export interface StudentMasterStats {
+  strokes: MasterStrokeStats[]
+}
+
+export async function getStudentMasterStats(studentId: string): Promise<StudentMasterStats> {
+  const supabase = await createClient()
+  const today = kstToday()
+  const allSteps = await getCachedLadderSteps()
+  const masterSteps = allSteps.filter(s => s.stroke_key === 'master')
+  if (masterSteps.length === 0) return { strokes: [] }
+
+  const stepIds = masterSteps.map(s => s.id)
+  const [{ data: allMeas }, { data: todayMeas }] = await Promise.all([
+    supabase.from('measurements').select('skill_step_id,value').eq('student_id', studentId).eq('metric_type', 'laps').in('skill_step_id', stepIds),
+    supabase.from('measurements').select('skill_step_id,value').eq('student_id', studentId).eq('metric_type', 'laps').eq('measured_on', today).in('skill_step_id', stepIds),
+  ])
+  const totalByStep = new Map<string, number>()
+  for (const m of allMeas ?? []) totalByStep.set(m.skill_step_id, (totalByStep.get(m.skill_step_id) ?? 0) + Number(m.value))
+  const todayByStep = new Map<string, number>()
+  for (const m of todayMeas ?? []) todayByStep.set(m.skill_step_id, (todayByStep.get(m.skill_step_id) ?? 0) + Number(m.value))
+
+  const IM_TRACK_KEYS = ['im']
+  const strokes: MasterStrokeStats[] = masterSteps.map(s => {
+    const isIM = IM_TRACK_KEYS.includes(s.track_key)
+    const totalLaps = totalByStep.get(s.id) ?? 0
+    return {
+      stepId: s.id,
+      strokeKey: s.track_key,
+      strokeLabel: s.track_label,
+      todayLaps: todayByStep.get(s.id) ?? 0,
+      totalLaps,
+      totalDistanceM: isIM ? 0 : totalLaps * 50,
+    }
+  })
+  return { strokes }
+}
+
 // 원장 → 강사 상세 대시보드
 export interface InstructorDetailStudent { id: string; name: string; grade: string | null; currentStrokeKey: string | null }
 export interface InstructorStrokeGroup { key: string; label: string; count: number; students: InstructorDetailStudent[] }
