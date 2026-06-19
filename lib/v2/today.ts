@@ -57,12 +57,13 @@ export function buildTodayCards(
 // ── 오늘 카드(내 반) 보강: 영법 배지 + 현재 칸 칩 + 오늘 기록 상태 ──────────────
 
 export interface TodayChip {
-  id: string; key: string; ladder_order: number
+  id: string; key: string; ladder_order: number; stroke_key: string
   label: string; step_kind: StepKind; measure_spec: MetricType[]
   is_first_completion: boolean
   passed: boolean          // 통과(전체기간)
   recordedToday: boolean   // 오늘 측정/연습 기록 있음
   passedToday: boolean     // 오늘 통과
+  isCurrent: boolean       // 현재 단계(사다리 첫 미통과)
 }
 export interface TodayCardView extends TodayCard {
   classHour: number | null
@@ -92,10 +93,11 @@ export function buildTodayCardView(
 ): TodayCardView {
   const { focus, steps } = selectCardWindow(strokes, { keepPassedIds: todayPassedIds })
   const chips: TodayChip[] = steps.map((s: LadderStepView) => ({
-    id: s.id, key: s.key, ladder_order: s.ladder_order,
+    id: s.id, key: s.key, ladder_order: s.ladder_order, stroke_key: s.stroke_key,
     label: s.label, step_kind: s.step_kind, measure_spec: s.measure_spec,
     is_first_completion: s.is_first_completion,
     passed: s.passed, recordedToday: todayRecordedIds.has(s.id), passedToday: todayPassedIds.has(s.id),
+    isCurrent: s.isCurrent,
   }))
   // 최근 통과 trail: focus 영법 통과 단계 중 ladder_order 큰 순 2개 라벨
   const recentPassed = focus

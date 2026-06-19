@@ -99,7 +99,7 @@ export async function passStepAction(studentId: string, step: { id: string; key:
   for (const m of opts.measures ?? []) {
     await supabase.from('measurements').insert({ student_id: studentId, metric_type: m.metric, value: m.value, measured_on: today(), session_id: sessionId, skill_step_id: step.id, instructor_id: userId })
   }
-  revalidatePath('/v2/today'); revalidatePath(`/v2/student/${studentId}`)
+  revalidatePath('/v2/today'); revalidatePath(`/v2/student/${studentId}`); revalidatePath(`/v2/student/${studentId}/progress`)
 }
 
 // 오늘 카드 칩 탭 = "오늘 했음" 토글. 오늘자 attempt 행이 있으면 취소(삭제), 없으면 1건 기록.
@@ -287,7 +287,7 @@ export async function passLadderCascade(studentId: string, step: { id: string; k
   for (const m of opts.measures ?? []) {
     await supabase.from('measurements').insert({ student_id: studentId, metric_type: m.metric, value: m.value, measured_on: today(), session_id: sessionId, skill_step_id: step.id, instructor_id: userId })
   }
-  revalidatePath(`/v2/student/${studentId}`)
+  revalidatePath(`/v2/student/${studentId}`); revalidatePath(`/v2/student/${studentId}/progress`)
 }
 
 export async function addAttempt(studentId: string, stepId: string) {

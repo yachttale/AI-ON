@@ -2,7 +2,7 @@
 'use client'
 import { useState, useTransition } from 'react'
 import Link from 'next/link'
-import { recordStepToday, recordMeasureToday, markAbsent, passStepAction, assignToMe, confirmSession, acceptReportedStep, markAbsentForDate, recordStepForDate, recordMeasureForDate, unpassStep } from '@/lib/v2/actions'
+import { passLadderCascade, markAbsent, passStepAction, assignToMe, confirmSession, acceptReportedStep, markAbsentForDate, recordStepForDate, recordMeasureForDate, unpassStep } from '@/lib/v2/actions'
 import { strokeBadge } from '@/lib/v2/stroke-colors'
 import type { MetricType } from '@/types/v2'
 import type { TodayCard, TodayCardView, TodayChip } from '@/lib/v2/today'
@@ -12,8 +12,7 @@ export function TodayCardItem({ card }: { card: TodayCardView }) {
   const [absent, setAbsent] = useState(card.absent)
   const badge = strokeBadge(card.focusStrokeKey)
 
-  // 오늘 기록 요약(칩 중 오늘 기록/통과된 라벨)
-  const recorded = card.chips.filter(c => c.recordedToday || c.passedToday).map(c => c.label)
+  const recorded = card.chips.filter(c => c.passedToday).map(c => c.label)
   const isPending = card.status === 'pending'      // 아이 패드 입력 — 확인 필요
   const isConfirmed = card.status === 'confirmed'
 
@@ -89,47 +88,43 @@ export function TodayCardItem({ card }: { card: TodayCardView }) {
 
 function Chip({ studentId, chip }: { studentId: string; chip: TodayChip }) {
   const [pending, start] = useTransition()
-  const [rec, setRec] = useState(chip.recordedToday)
   const [passed, setPassed] = useState(chip.passed)
-  const [canUndo, setCanUndo] = useState(chip.passedToday)  // 오늘 통과한 경우만 취소 허용
+  const [canUndo, setCanUndo] = useState(chip.passedToday)
   const [open, setOpen] = useState(false)
   const [time, setTime] = useState(''); const [strokes, setStrokes] = useState('')
 
   const hasMeasure = chip.measure_spec.length > 0
-  const canPass = !passed && (chip.step_kind === 'ladder' || chip.step_kind === 'counter')
-  const snap = { id: chip.id, key: chip.key, ladder_order: chip.ladder_order }
+  const fullSnap = { id: chip.id, key: chip.key, ladder_order: chip.ladder_order, stroke_key: chip.stroke_key }
 
-  const toggleRecord = () => {
+  const handleClick = () => {
+    if (passed || chip.step_kind !== 'ladder') return
     if (hasMeasure) { setOpen(o => !o); return }
-    const v = !rec; setRec(v); start(() => recordStepToday(studentId, chip.id))
+    setPassed(true); setCanUndo(true)
+    start(() => passLadderCascade(studentId, fullSnap))
   }
   const saveMeasure = () => {
     const jobs: { metric: MetricType; value: number }[] = []
-    if (chip.step_kind === 'repeatable') jobs.push({ metric: 'laps', value: 1 })
     if (chip.measure_spec.includes('time_sec') && time) jobs.push({ metric: 'time_sec', value: Number(time) })
     if (chip.measure_spec.includes('stroke_count') && strokes) jobs.push({ metric: 'stroke_count', value: Number(strokes) })
     if (jobs.length === 0) return
-    setRec(true); setOpen(false)
-    start(async () => { for (const j of jobs) await recordMeasureToday(studentId, chip.id, j.metric, j.value) })
+    setPassed(true); setCanUndo(true); setOpen(false)
+    start(() => passLadderCascade(studentId, fullSnap, { measures: jobs }))
     setTime(''); setStrokes('')
   }
-  const doPass = () => { setPassed(true); setCanUndo(true); start(() => passStepAction(studentId, snap)) }
-  const doUnpass = () => { setPassed(false); setRec(false); setCanUndo(false); start(() => unpassStep(studentId, chip.id)) }
+  const doUnpass = () => { setPassed(false); setCanUndo(false); start(() => unpassStep(studentId, chip.id)) }
 
-  const state = passed ? 'bg-gray-200 text-gray-400 line-through' : rec ? 'bg-green-500 text-white' : 'bg-white border'
+  const state = passed
+    ? 'bg-gray-200 text-gray-400 line-through'
+    : chip.isCurrent
+    ? 'bg-blue-50 border-2 border-blue-400 text-blue-700 font-semibold'
+    : 'bg-white border text-gray-600'
 
   return (
     <div className="relative">
-      <button disabled={pending} onClick={passed ? undefined : toggleRecord}
+      <button disabled={pending} onClick={handleClick}
         className={`w-full min-h-[44px] px-2 py-2 rounded-lg text-xs font-medium text-left leading-tight ${state}`}>
-        {rec && !passed && '✓ '}{chip.label}
+        {chip.label}
       </button>
-      {/* 완주 핀: 오늘 기록됐고 아직 미통과인 ladder/counter */}
-      {canPass && rec && !open && (
-        <button disabled={pending} onClick={doPass}
-          className="absolute -top-1.5 -right-1.5 px-1.5 py-0.5 rounded-full bg-blue-600 text-white text-[10px] font-bold shadow">완주</button>
-      )}
-      {/* 취소 핀: 오늘 통과한 경우만 — 잘못 누른 경우 되돌리기 */}
       {passed && canUndo && (
         <button disabled={pending} onClick={doUnpass}
           className="absolute -top-1.5 -right-1.5 px-1.5 py-0.5 rounded-full bg-red-500 text-white text-[10px] font-bold shadow">↩</button>
@@ -144,7 +139,7 @@ function Chip({ studentId, chip }: { studentId: string; chip: TodayChip }) {
             <input value={strokes} onChange={e => setStrokes(e.target.value)} inputMode="numeric" placeholder="스트로크"
               className="w-16 border rounded px-1 py-1 text-xs" />
           )}
-          <button disabled={pending} onClick={saveMeasure} className="px-2 py-1 rounded bg-blue-500 text-white text-xs">저장</button>
+          <button disabled={pending} onClick={saveMeasure} className="px-2 py-1 rounded bg-blue-500 text-white text-xs">통과</button>
         </div>
       )}
     </div>
