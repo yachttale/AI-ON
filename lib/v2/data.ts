@@ -1018,6 +1018,121 @@ export async function getInstructorDetail(instructorId: string): Promise<Instruc
   }
 }
 
+// 영법 완주 기간 대시보드 — is_first_completion 단계부터 마지막 사다리 단계까지 소요일
+const STROKE_ORDER_FOR_STATS = ['beginner', 'freestyle', 'backstroke', 'breaststroke', 'butterfly', 'master']
+
+export interface ProgressStat {
+  strokeKey: string; strokeLabel: string; color: string | null
+  count: number; avgDays: number; minDays: number; maxDays: number
+}
+export interface InstructorProgressStat {
+  instructorId: string; instructorName: string
+  strokes: { strokeKey: string; strokeLabel: string; color: string | null; count: number; avgDays: number }[]
+}
+export interface ProgressDashboard { byStroke: ProgressStat[]; byInstructor: InstructorProgressStat[] }
+
+export async function getProgressDashboard(): Promise<ProgressDashboard> {
+  const supabase = await createClient()
+  const [allSteps, { data: prog }, { data: profiles }] = await Promise.all([
+    getCachedLadderSteps(),
+    supabase.from('skill_progress').select('student_id,skill_step_id,passed_at,instructor_id').eq('source', 'observed'),
+    supabase.from('profiles').select('id,name'),
+  ])
+  const nameById = new Map((profiles ?? []).map(p => [p.id, p.name]))
+
+  // 영법별 첫 단계(is_first_completion) ID + 마지막 사다리 단계 ID + 메타
+  const firstIdsByStroke = new Map<string, Set<string>>()
+  const lastIdByStroke = new Map<string, string>()
+  const strokeMeta = new Map<string, { label: string; color: string | null }>()
+  const ladderByStroke = new Map<string, LadderInputStep[]>()
+
+  for (const s of allSteps) {
+    if (s.step_kind !== 'ladder') continue
+    if (!ladderByStroke.has(s.stroke_key)) ladderByStroke.set(s.stroke_key, [])
+    ladderByStroke.get(s.stroke_key)!.push(s)
+    strokeMeta.set(s.stroke_key, { label: s.stroke_label, color: s.color })
+    if (s.is_first_completion) {
+      if (!firstIdsByStroke.has(s.stroke_key)) firstIdsByStroke.set(s.stroke_key, new Set())
+      firstIdsByStroke.get(s.stroke_key)!.add(s.id)
+    }
+  }
+  for (const [k, steps] of ladderByStroke) {
+    const last = steps.sort((a, b) => b.ladder_order - a.ladder_order)[0]
+    if (last) lastIdByStroke.set(k, last.id)
+  }
+
+  // 학생별 단계→통과일, 마지막 단계 강사
+  const studentStepDate = new Map<string, Map<string, string>>()
+  const lastStepInstructor = new Map<string, Map<string, string>>() // student→stroke→instructor
+  for (const p of prog ?? []) {
+    if (!studentStepDate.has(p.student_id)) studentStepDate.set(p.student_id, new Map())
+    studentStepDate.get(p.student_id)!.set(p.skill_step_id, p.passed_at)
+  }
+
+  // 영법별 유효 데이터 집계
+  interface DataPoint { days: number; instructorId: string | null }
+  const strokeData = new Map<string, DataPoint[]>()
+
+  for (const strokeKey of STROKE_ORDER_FOR_STATS) {
+    const firstIds = firstIdsByStroke.get(strokeKey)
+    const lastId = lastIdByStroke.get(strokeKey)
+    if (!firstIds || !lastId) continue
+    const points: DataPoint[] = []
+    for (const [studentId, stepDates] of studentStepDate) {
+      let firstDate: string | null = null
+      for (const fid of firstIds) {
+        const d = stepDates.get(fid)
+        if (d && (!firstDate || d < firstDate)) firstDate = d
+      }
+      const lastDate = stepDates.get(lastId) ?? null
+      if (!firstDate || !lastDate) continue
+      const days = Math.round((new Date(lastDate).getTime() - new Date(firstDate).getTime()) / 86400000)
+      if (days < 0) continue
+      // 마지막 단계 통과 강사
+      const instRow = (prog ?? []).find(p => p.student_id === studentId && p.skill_step_id === lastId)
+      points.push({ days, instructorId: instRow?.instructor_id ?? null })
+    }
+    if (points.length > 0) strokeData.set(strokeKey, points)
+  }
+
+  const byStroke: ProgressStat[] = []
+  for (const strokeKey of STROKE_ORDER_FOR_STATS) {
+    const pts = strokeData.get(strokeKey)
+    if (!pts) continue
+    const meta = strokeMeta.get(strokeKey)!
+    const days = pts.map(p => p.days)
+    byStroke.push({
+      strokeKey, strokeLabel: meta.label, color: meta.color, count: days.length,
+      avgDays: Math.round(days.reduce((a, b) => a + b, 0) / days.length),
+      minDays: Math.min(...days), maxDays: Math.max(...days),
+    })
+  }
+
+  const instMap = new Map<string, Map<string, number[]>>()
+  for (const [strokeKey, pts] of strokeData) {
+    for (const p of pts) {
+      if (!p.instructorId) continue
+      if (!instMap.has(p.instructorId)) instMap.set(p.instructorId, new Map())
+      const sm = instMap.get(p.instructorId)!
+      if (!sm.has(strokeKey)) sm.set(strokeKey, [])
+      sm.get(strokeKey)!.push(p.days)
+    }
+  }
+  const byInstructor: InstructorProgressStat[] = []
+  for (const [instId, sm] of instMap) {
+    const strokes = STROKE_ORDER_FOR_STATS.flatMap(sk => {
+      const days = sm.get(sk)
+      if (!days?.length) return []
+      const meta = strokeMeta.get(sk)!
+      return [{ strokeKey: sk, strokeLabel: meta.label, color: meta.color, count: days.length, avgDays: Math.round(days.reduce((a, b) => a + b, 0) / days.length) }]
+    })
+    if (!strokes.length) continue
+    byInstructor.push({ instructorId: instId, instructorName: nameById.get(instId) ?? '?', strokes })
+  }
+  byInstructor.sort((a, b) => a.instructorName.localeCompare(b.instructorName, 'ko'))
+  return { byStroke, byInstructor }
+}
+
 // 일주일 시간표 — 요일×시간 슬롯별 강사+학생 목록
 const DAY_TO_JS: Record<string, number> = { '월': 1, '화': 2, '수': 3, '목': 4, '금': 5, '토': 6 }
 

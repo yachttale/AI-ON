@@ -3,7 +3,7 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import {
   LayoutDashboard, Users, GraduationCap, MessageSquare,
-  LogOut, ChevronRight, CalendarCheck, CalendarDays,
+  LogOut, ChevronRight, CalendarCheck, CalendarDays, BarChart2,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 
@@ -13,6 +13,7 @@ const NAV = [
   { href: '/v2/director/students', label: '전체 학생', icon: Users, exact: false },
   { href: '/v2/director/feedback', label: '학부모 피드백', icon: MessageSquare, exact: false },
   { href: '/v2/director/timetable', label: '시간표', icon: CalendarDays, exact: false },
+  { href: '/v2/director/stats', label: '진도 통계', icon: BarChart2, exact: false },
   { href: '/v2/today', label: '내 수업', icon: CalendarCheck, exact: false },
 ]
 
