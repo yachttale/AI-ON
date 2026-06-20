@@ -13,10 +13,12 @@ const WEEKDAY_COLS = [
 ]
 
 // 주중 시간 ↔ 토요일 시간 쌍
+// toHour24: 1~9시 → +12(오후), 10~12시 → 그대로(오전)
+// 토 9시=21, 토 10시=10, 토 11시=11
 const ROWS = [
   { label: '4시', weekdayHour: 16, satLabel: '9시',  satHour: 21 },
-  { label: '5시', weekdayHour: 17, satLabel: '10시', satHour: 22 },
-  { label: '6시', weekdayHour: 18, satLabel: '11시', satHour: 23 },
+  { label: '5시', weekdayHour: 17, satLabel: '10시', satHour: 10 },
+  { label: '6시', weekdayHour: 18, satLabel: '11시', satHour: 11 },
   { label: '7시', weekdayHour: 19, satLabel: null,   satHour: null },
   { label: '8시', weekdayHour: 20, satLabel: null,   satHour: null },
 ]
