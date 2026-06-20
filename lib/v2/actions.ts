@@ -2,19 +2,19 @@
 'use server'
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
+import { getCurrentUser, getCurrentRole } from '@/lib/v2/session'
 import { kstToday, kstWeekday, kstDaysAgo } from '@/lib/v2/now'
 import type { Attendance, MetricType, Difficulty } from '@/types/v2'
 
 async function ctx() {
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getCurrentUser()   // 요청 스코프 캐시 — 액션 내 중복 Auth 왕복 제거
   if (!user) throw new Error('Unauthorized')
   return { supabase, userId: user.id }
 }
 // 기록 권한: 원장 ∪ 고정 담당 ∪ 오늘 요일 배정. (오늘 '내 수업' 판정과 동일 기준)
 async function assertOwns(supabase: Awaited<ReturnType<typeof createClient>>, userId: string, studentId: string) {
-  const { data: prof } = await supabase.from('profiles').select('role').eq('id', userId).maybeSingle()
-  if (prof?.role === 'director') return  // 원장도 수업 — 모든 학생 기록 가능
+  if (await getCurrentRole() === 'director') return  // 원장도 수업 — 모든 학생 기록 가능(role 조회는 캐시)
   const { data: s } = await supabase.from('students').select('instructor_id').eq('id', studentId).maybeSingle()
   if (s?.instructor_id === userId) return  // 고정 담당
   const weekday = kstWeekday()
@@ -106,11 +106,11 @@ export async function setLaps(studentId: string, laps: number) {
 export async function passStepAction(studentId: string, step: { id: string; key: string; ladder_order: number }, opts: { difficulty?: Difficulty; measures?: { metric: MetricType; value: number }[] } = {}) {
   const { supabase, userId } = await ctx(); await assertOwns(supabase, userId, studentId)
   const sessionId = await ensureSession(supabase, userId, studentId)
-  const { error } = await supabase.from('skill_progress').insert({
+  const { error } = await supabase.from('skill_progress').upsert({
     student_id: studentId, skill_step_id: step.id, source: 'observed', difficulty: opts.difficulty ?? null,
     source_session_id: sessionId, instructor_id: userId, step_key_snapshot: step.key, ladder_order_snapshot: step.ladder_order,
-  })
-  if (error && !String(error.message).includes('duplicate')) throw error
+  }, { onConflict: 'student_id,skill_step_id', ignoreDuplicates: true })
+  if (error) throw error
   for (const m of opts.measures ?? []) {
     await supabase.from('measurements').insert({ student_id: studentId, metric_type: m.metric, value: m.value, measured_on: today(), session_id: sessionId, skill_step_id: step.id, instructor_id: userId })
   }
@@ -151,8 +151,7 @@ export async function recordMeasureToday(studentId: string, stepId: string, metr
 // 휴원일 토글(원장 전용): 오늘을 휴원일로 지정/해제. 결석과 무관 — 그 날 수업 자체가 없음.
 export async function setClosureToday(closed: boolean) {
   const { supabase, userId } = await ctx()
-  const { data: profile } = await supabase.from('profiles').select('role').eq('id', userId).single()
-  if (profile?.role !== 'director') throw new Error('Forbidden')
+  if (!await isDirector()) throw new Error('Forbidden')
   if (closed) {
     const { error } = await supabase.from('studio_closures').upsert({ closed_on: today(), created_by: userId }, { onConflict: 'closed_on' })
     if (error) throw error
@@ -163,16 +162,15 @@ export async function setClosureToday(closed: boolean) {
   revalidatePath('/v2/today'); revalidatePath('/v2/director')
 }
 
-async function isDirector(supabase: Awaited<ReturnType<typeof createClient>>, userId: string) {
-  const { data } = await supabase.from('profiles').select('role').eq('id', userId).maybeSingle()
-  return data?.role === 'director'
+async function isDirector() {
+  return (await getCurrentRole()) === 'director'
 }
 
 // 담당 강사(반) 변경 / 미배정. instructorId=null → 미배정. 원장은 임의 배정, 강사는 본인 학생 해제만.
 // 요일배정을 정리해 정적 담당을 단일 기준으로 둠.
 export async function setStudentInstructor(studentId: string, instructorId: string | null) {
   const { supabase, userId } = await ctx()
-  const director = await isDirector(supabase, userId)
+  const director = await isDirector()
   if (!director) {
     await assertOwns(supabase, userId, studentId)
     if (instructorId !== null && instructorId !== userId) throw new Error('Forbidden')
@@ -199,8 +197,8 @@ export async function cancelWithdrawal(studentId: string) {
   for (const p of ['/v2/today', '/v2/students', '/v2/director', `/v2/student/${studentId}`]) revalidatePath(p)
 }
 export async function approveWithdrawal(studentId: string) {
-  const { supabase, userId } = await ctx()
-  if (!await isDirector(supabase, userId)) throw new Error('Forbidden')
+  const { supabase } = await ctx()
+  if (!await isDirector()) throw new Error('Forbidden')
   const { error } = await supabase.from('students')
     .update({ withdrawal_status: 'approved', is_active: false }).eq('id', studentId)
   if (error) throw error
@@ -232,8 +230,7 @@ async function ensureSessionForDate(supabase: any, userId: string, studentId: st
   return data.id
 }
 async function assertOwnsForDate(supabase: Awaited<ReturnType<typeof createClient>>, userId: string, studentId: string, date: string) {
-  const { data: prof } = await supabase.from('profiles').select('role').eq('id', userId).maybeSingle()
-  if (prof?.role === 'director') return
+  if (await getCurrentRole() === 'director') return
   const { data: s } = await supabase.from('students').select('instructor_id').eq('id', studentId).maybeSingle()
   if (s?.instructor_id === userId) return
   const weekday = new Date(date + 'T12:00:00+09:00').getDay()
@@ -321,11 +318,11 @@ export async function toggleSingleCheck(studentId: string, step: { id: string; k
     if (error) throw error
   } else {
     const sessionId = await ensureSession(supabase, userId, studentId)
-    const { error } = await supabase.from('skill_progress').insert({
+    const { error } = await supabase.from('skill_progress').upsert({
       student_id: studentId, skill_step_id: step.id, source: 'observed', instructor_id: userId,
       source_session_id: sessionId, step_key_snapshot: step.key, ladder_order_snapshot: step.ladder_order,
-    })
-    if (error && !String(error.message).includes('duplicate')) throw error
+    }, { onConflict: 'student_id,skill_step_id', ignoreDuplicates: true })
+    if (error) throw error
   }
   revalidatePath(`/v2/student/${studentId}`)
 }
@@ -427,9 +424,8 @@ export async function createStudent(data: {
   phone?: string
   enrolled_on?: string
 }): Promise<{ id: string } | { error: string }> {
-  const { supabase, userId } = await ctx()
-  const { data: prof } = await supabase.from('profiles').select('role').eq('id', userId).maybeSingle()
-  if (prof?.role !== 'director') return { error: '원장만 학생을 등록할 수 있습니다' }
+  const { supabase } = await ctx()
+  if (!await isDirector()) return { error: '원장만 학생을 등록할 수 있습니다' }
 
   const { data: student, error } = await supabase.from('students').insert({
     name: data.name.trim(),

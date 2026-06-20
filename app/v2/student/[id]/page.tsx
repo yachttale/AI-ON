@@ -1,7 +1,7 @@
 // app/v2/student/[id]/page.tsx — 학생 리포트 대시보드(레이더 + 지표 한눈에)
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { createClient } from '@/lib/supabase/server'
+import { getCurrentRole } from '@/lib/v2/session'
 import { getStudentDashboard, getInstructors, getStudentMasterStats, computeCurrentStrokeKey, getCachedLadderSteps, getStudentPassedStepIds } from '@/lib/v2/data'
 import { relDayLabel } from '@/lib/v2/now'
 import { StrokeRadar } from './StrokeRadar'
@@ -20,10 +20,7 @@ export default async function StudentDashboardPage({ params }: { params: Promise
   const d = await getStudentDashboard(id)
   if (!d) notFound()
   const km = (d.stats.totalDistanceM / 1000)
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  const { data: profile } = await supabase.from('profiles').select('role').eq('id', user!.id).single()
-  const isDirector = profile?.role === 'director'
+  const isDirector = (await getCurrentRole()) === 'director'
   const instructors = isDirector ? await getInstructors() : []
 
   // 마스터 여부 판단

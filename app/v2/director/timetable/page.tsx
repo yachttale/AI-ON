@@ -1,7 +1,7 @@
 // app/v2/director/timetable/page.tsx — 일주일 강사 시간표
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
-import { createClient } from '@/lib/supabase/server'
+import { getCurrentRole } from '@/lib/v2/session'
 import { getWeeklyTimetable, type TimetableInstructorGroup } from '@/lib/v2/data'
 import { strokeBadge } from '@/lib/v2/stroke-colors'
 
@@ -82,10 +82,7 @@ function InstructorGroups({
 }
 
 export default async function TimetablePage() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  const { data: profile } = await supabase.from('profiles').select('role').eq('id', user!.id).single()
-  if (profile?.role !== 'director') redirect('/v2/today')
+  if (await getCurrentRole() !== 'director') redirect('/v2/today')
 
   const timetable = await getWeeklyTimetable()
 

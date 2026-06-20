@@ -1,7 +1,7 @@
 // lib/v2/today.ts — 오늘 학생 카드 모델(순수). 스케줄 필터는 lib/schedule 재사용.
 // 오늘 수업 학생을 '내 반(mine)' / '가져오기 가능(assignable: 미배정·타반)'으로 분리.
 import { getTodayEntries } from '@/lib/schedule'
-import { kstWeekday, kstHour } from './now'
+import { kstWeekday } from './now'
 import { selectCardWindow, type StrokeLadderView, type LadderStepView } from './ladder'
 import type { Attendance, MetricType, StepKind } from '@/types/v2'
 

@@ -1,18 +1,12 @@
 // app/v2/director/dashboard/page.tsx — 원장 대시보드 서버 페이지
 import { redirect } from 'next/navigation'
-import { createClient } from '@/lib/supabase/server'
+import { getCurrentRole } from '@/lib/v2/session'
 import { getDashboardRaw } from '@/lib/v2/data'
 import { buildDashboard } from '@/lib/v2/dashboard'
 
 export default async function DirectorDashboardPage() {
-  // 원장 권한 가드
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) redirect('/v2/today')
-
-  const { data: profile } = await supabase
-    .from('profiles').select('role').eq('id', user.id).single()
-  if (profile?.role !== 'director') redirect('/v2/today')
+  // 원장 권한 가드 (role 조회는 요청 스코프 캐시)
+  if (await getCurrentRole() !== 'director') redirect('/v2/today')
 
   const { input, strokeMeta } = await getDashboardRaw()
   const view = buildDashboard(input, strokeMeta)

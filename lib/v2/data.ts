@@ -9,6 +9,7 @@ import { buildTodayCardView } from './today'
 import { buildStrokeLadders, selectCardWindow, type LadderInputStep, type StrokeLadderView } from './ladder'
 import { getTodayEntries, parseSchedule } from '@/lib/schedule'
 import { kstToday, kstWeekday, kstDaysAgo } from '@/lib/v2/now'
+import { getCurrentUser } from '@/lib/v2/session'
 import type { DashboardInput } from './dashboard'
 
 const todayStr = kstToday
@@ -30,33 +31,6 @@ function createAnonClient() {
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
   )
-}
-
-// 활성 커리큘럼 버전 id
-async function getActiveVersionId(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  supabase: any,
-): Promise<string | null> {
-  const { data } = await supabase.from('curriculum_versions').select('id').eq('status', 'active').single()
-  return data?.id ?? null
-}
-
-// 활성 버전의 사다리 입력(영법·트랙·단계) — 학생 무관, 1회 로드
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function getLadderInputs(supabase: any, versionId: string): Promise<LadderInputStep[]> {
-  const { data: rows, error } = await supabase
-    .from('skill_steps')
-    .select('id,key,label,ladder_order,step_kind,measure_spec,is_first_completion,strokes(key,label,color,display_order),skill_tracks(key,label,display_order)')
-    .eq('curriculum_version_id', versionId).eq('is_active', true)
-    .order('ladder_order', { ascending: true })
-  if (error) throw error
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return (rows ?? []).map((r: any) => ({
-    id: r.id, stroke_key: r.strokes.key, stroke_label: r.strokes.label, color: r.strokes.color,
-    track_key: r.skill_tracks?.key ?? '', track_label: r.skill_tracks?.label ?? '',
-    key: r.key, label: r.label, ladder_order: r.ladder_order,
-    step_kind: r.step_kind, measure_spec: r.measure_spec ?? [], is_first_completion: r.is_first_completion,
-  }))
 }
 
 // 활성 커리큘럼 전체 단계 조회 — unstable_cache로 cross-request 캐싱 (쿠키 없는 클라이언트)
@@ -444,17 +418,28 @@ export async function enrichPastDayStudents(students: PastDayStudentRow[], date:
 
 // 나의 학생(담당 전체) 목록
 export interface MyStudentRow { id: string; name: string; grade: string | null; schedule: string | null }
-export async function getMyStudents(): Promise<MyStudentRow[]> {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+
+// 내 고정 담당(instructor_id) 활성 학생 — 요청 스코프 캐시(어제/그제 화면에서 중복 조회 제거)
+export const getMyStaticStudents = cache(async (): Promise<MyStudentRow[]> => {
+  const user = await getCurrentUser()
   if (!user) return []
+  const supabase = await createClient()
+  const { data } = await supabase.from('students')
+    .select('id,name,grade,schedule').eq('instructor_id', user.id).eq('is_active', true)
+  return (data ?? []) as MyStudentRow[]
+})
+
+export async function getMyStudents(): Promise<MyStudentRow[]> {
+  const user = await getCurrentUser()
+  if (!user) return []
+  const supabase = await createClient()
   // 담당 = 고정 담당(instructor_id) ∪ 요일배정(student_day_instructors). 둘 다 합쳐 표시.
-  const [{ data: staticRows }, { data: dayRows }] = await Promise.all([
-    supabase.from('students').select('id,name,grade,schedule').eq('instructor_id', user.id).eq('is_active', true),
+  const [staticRows, { data: dayRows }] = await Promise.all([
+    getMyStaticStudents(),
     supabase.from('student_day_instructors').select('student_id').eq('instructor_id', user.id),
   ])
   const map = new Map<string, MyStudentRow>()
-  for (const s of staticRows ?? []) map.set(s.id, s as MyStudentRow)
+  for (const s of staticRows) map.set(s.id, s)
   const dayIds = [...new Set((dayRows ?? []).map(r => r.student_id))].filter(id => !map.has(id))
   if (dayIds.length) {
     const { data: dayStudents } = await supabase
@@ -506,20 +491,20 @@ export async function getPastDayStudentsForMe(daysBack: 1 | 2): Promise<{
   date: string; dateLabel: string; students: PastDayStudentRow[]
 }> {
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getCurrentUser()
   if (!user) return { date: '', dateLabel: '', students: [] }
   const date = kstDaysAgo(daysBack)
   const d = new Date(date + 'T12:00:00+09:00')
   const weekday = d.getDay()
   const dayNames = ['일', '월', '화', '수', '목', '금', '토']
   const dateLabel = `${daysBack === 1 ? '어제' : '그저께'} ${d.getMonth() + 1}/${d.getDate()}(${dayNames[weekday]})`
-  // 해당 요일 내 담당 학생 = 고정담당 ∪ 요일배정
-  const [{ data: staticRows }, { data: dayRows }] = await Promise.all([
-    supabase.from('students').select('id,name,grade,schedule').eq('instructor_id', user.id).eq('is_active', true),
+  // 해당 요일 내 담당 학생 = 고정담당 ∪ 요일배정. 고정담당은 캐시(어제/그제 공유).
+  const [staticRows, { data: dayRows }] = await Promise.all([
+    getMyStaticStudents(),
     supabase.from('student_day_instructors').select('student_id').eq('instructor_id', user.id).eq('weekday', weekday),
   ])
   const map = new Map<string, MyStudentRow>()
-  for (const s of staticRows ?? []) map.set(s.id, s as MyStudentRow)
+  for (const s of staticRows) map.set(s.id, s)
   const dayIds = (dayRows ?? []).map(r => r.student_id).filter(id => !map.has(id))
   if (dayIds.length) {
     const { data: extra } = await supabase.from('students').select('id,name,grade,schedule').in('id', dayIds).eq('is_active', true)
@@ -944,9 +929,9 @@ export interface InstructorDetailData {
   recentPasses: Array<{ studentName: string; stepLabel: string; strokeLabel: string; passedAt: string }>
 }
 
-const STROKE_ORDER_KEYS = ['beginner', 'free', 'back', 'breast', 'butterfly', 'master']
+const STROKE_ORDER_KEYS = ['beginner', 'freestyle', 'backstroke', 'breaststroke', 'butterfly', 'master']
 const STROKE_LABELS_MAP: Record<string, string> = {
-  beginner: '초보', free: '자유형', back: '배영', breast: '평영', butterfly: '접영', master: '마스터',
+  beginner: '초보', freestyle: '자유형', backstroke: '배영', breaststroke: '평영', butterfly: '접영', master: '마스터',
 }
 
 export async function getInstructorDetail(instructorId: string): Promise<InstructorDetailData | null> {
@@ -1061,12 +1046,16 @@ export async function getProgressDashboard(): Promise<ProgressDashboard> {
     if (last) lastIdByStroke.set(k, last.id)
   }
 
-  // 학생별 단계→통과일, 마지막 단계 강사
+  // 학생별 (단계→통과일), (단계→강사) 사전 인덱스 — O(N) 1회 구성
   const studentStepDate = new Map<string, Map<string, string>>()
-  const lastStepInstructor = new Map<string, Map<string, string>>() // student→stroke→instructor
+  const studentStepInstructor = new Map<string, Map<string, string | null>>()
   for (const p of prog ?? []) {
-    if (!studentStepDate.has(p.student_id)) studentStepDate.set(p.student_id, new Map())
+    if (!studentStepDate.has(p.student_id)) {
+      studentStepDate.set(p.student_id, new Map())
+      studentStepInstructor.set(p.student_id, new Map())
+    }
     studentStepDate.get(p.student_id)!.set(p.skill_step_id, p.passed_at)
+    studentStepInstructor.get(p.student_id)!.set(p.skill_step_id, p.instructor_id ?? null)
   }
 
   // 영법별 유효 데이터 집계
@@ -1088,9 +1077,9 @@ export async function getProgressDashboard(): Promise<ProgressDashboard> {
       if (!firstDate || !lastDate) continue
       const days = Math.round((new Date(lastDate).getTime() - new Date(firstDate).getTime()) / 86400000)
       if (days < 0) continue
-      // 마지막 단계 통과 강사
-      const instRow = (prog ?? []).find(p => p.student_id === studentId && p.skill_step_id === lastId)
-      points.push({ days, instructorId: instRow?.instructor_id ?? null })
+      // 마지막 단계 통과 강사 — 사전 인덱스에서 O(1) 조회
+      const instructorId = studentStepInstructor.get(studentId)?.get(lastId) ?? null
+      points.push({ days, instructorId })
     }
     if (points.length > 0) strokeData.set(strokeKey, points)
   }

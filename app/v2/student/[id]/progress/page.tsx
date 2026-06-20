@@ -1,6 +1,7 @@
 // app/v2/student/[id]/progress/page.tsx — 학생 진도 편집(전체 사다리)
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
+import { getCurrentUser, getCurrentRole } from '@/lib/v2/session'
 import { getStrokeLadders } from '@/lib/v2/data'
 import { StepControl } from '../StepControl'
 import { UnassignButton } from '../UnassignButton'
@@ -9,12 +10,12 @@ import { kstWeekday } from '@/lib/v2/now'
 export default async function ProgressPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const supabase = await createClient()
-  const [{ data: student }, { data: { user } }] = await Promise.all([
+  const [{ data: student }, user, role] = await Promise.all([
     supabase.from('students').select('name,grade').eq('id', id).single(),
-    supabase.auth.getUser(),
+    getCurrentUser(),
+    getCurrentRole(),
   ])
-  const { data: profile } = await supabase.from('profiles').select('role').eq('id', user!.id).single()
-  const isDirector = profile?.role === 'director'
+  const isDirector = role === 'director'
 
   // 오늘 요일 배정으로 내 반에 온 학생인지 확인
   const weekday = kstWeekday()

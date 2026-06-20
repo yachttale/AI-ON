@@ -1,6 +1,6 @@
 // app/v2/director/stats/page.tsx — 영법 완주 기간 통계 대시보드
 import { redirect } from 'next/navigation'
-import { createClient } from '@/lib/supabase/server'
+import { getCurrentRole } from '@/lib/v2/session'
 import { getProgressDashboard } from '@/lib/v2/data'
 import { strokeBadge } from '@/lib/v2/stroke-colors'
 
@@ -42,10 +42,7 @@ function BarChart({ items, maxVal }: {
 }
 
 export default async function StatsPage() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  const { data: profile } = await supabase.from('profiles').select('role').eq('id', user!.id).single()
-  if (profile?.role !== 'director') redirect('/v2/today')
+  if (await getCurrentRole() !== 'director') redirect('/v2/today')
 
   const { byStroke, byInstructor } = await getProgressDashboard()
 

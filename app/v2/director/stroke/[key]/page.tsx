@@ -1,7 +1,7 @@
 // app/v2/director/stroke/[key]/page.tsx — 영법 그룹 드릴다운 (다크 어드민)
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
-import { createClient } from '@/lib/supabase/server'
+import { getCurrentRole } from '@/lib/v2/session'
 import { getDirectorRoster } from '@/lib/v2/data'
 
 const GROUP_LABELS: Record<string, string> = {
@@ -13,10 +13,7 @@ export default async function StrokeGroupPage({ params }: { params: Promise<{ ke
   const { key } = await params
   if (!GROUP_LABELS[key]) redirect('/v2/director')
 
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  const { data: profile } = await supabase.from('profiles').select('role').eq('id', user!.id).single()
-  if (profile?.role !== 'director') redirect('/v2/today')
+  if (await getCurrentRole() !== 'director') redirect('/v2/today')
 
   const roster = await getDirectorRoster()
   const students = roster.filter(s => s.currentStrokeKey === key)

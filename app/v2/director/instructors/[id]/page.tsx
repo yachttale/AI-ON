@@ -6,16 +6,16 @@ import { getInstructorDetail } from '@/lib/v2/data'
 
 const STROKE_COLOR: Record<string, string> = {
   beginner: 'bg-gray-500/20 text-gray-300 border-gray-500/30',
-  free: 'bg-blue-500/20 text-blue-300 border-blue-500/30',
-  back: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/30',
-  breast: 'bg-green-500/20 text-green-300 border-green-500/30',
+  freestyle: 'bg-blue-500/20 text-blue-300 border-blue-500/30',
+  backstroke: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/30',
+  breaststroke: 'bg-green-500/20 text-green-300 border-green-500/30',
   butterfly: 'bg-purple-500/20 text-purple-300 border-purple-500/30',
   master: 'bg-teal-500/20 text-teal-300 border-teal-500/30',
   unassigned: 'bg-white/5 text-white/40 border-white/10',
 }
 const DOT_COLOR: Record<string, string> = {
-  beginner: 'bg-gray-400', free: 'bg-blue-400', back: 'bg-cyan-400',
-  breast: 'bg-green-400', butterfly: 'bg-purple-400', master: 'bg-teal-400',
+  beginner: 'bg-gray-400', freestyle: 'bg-blue-400', backstroke: 'bg-cyan-400',
+  breaststroke: 'bg-green-400', butterfly: 'bg-purple-400', master: 'bg-teal-400',
 }
 
 export default async function InstructorDetailPage({

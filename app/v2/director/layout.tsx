@@ -1,14 +1,12 @@
 // app/v2/director/layout.tsx — 원장 전용 풀스크린 다크 어드민 레이아웃
 import { redirect } from 'next/navigation'
-import { createClient } from '@/lib/supabase/server'
+import { getCurrentProfile } from '@/lib/v2/session'
 import DirectorSidebar from './DirectorSidebar'
 
 export default async function DirectorLayout({ children }: { children: React.ReactNode }) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) redirect('/login')
-  const { data: profile } = await supabase.from('profiles').select('name,role').eq('id', user.id).single()
-  if (profile?.role !== 'director') redirect('/v2/today')
+  const profile = await getCurrentProfile()
+  if (!profile) redirect('/login')
+  if (profile.role !== 'director') redirect('/v2/today')
 
   return (
     // 부모 v2 레이아웃 전체를 덮는 fixed 풀스크린 레이어

@@ -6,9 +6,9 @@ import type { DirectorRosterRow } from '@/lib/v2/data'
 
 const STROKE_BADGE: Record<string, string> = {
   beginner: 'bg-gray-500/20 text-gray-300',
-  free: 'bg-blue-500/20 text-blue-300',
-  back: 'bg-cyan-500/20 text-cyan-300',
-  breast: 'bg-green-500/20 text-green-300',
+  freestyle: 'bg-blue-500/20 text-blue-300',
+  backstroke: 'bg-cyan-500/20 text-cyan-300',
+  breaststroke: 'bg-green-500/20 text-green-300',
   butterfly: 'bg-purple-500/20 text-purple-300',
   master: 'bg-teal-500/20 text-teal-300',
 }

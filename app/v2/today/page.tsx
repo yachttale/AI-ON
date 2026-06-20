@@ -1,6 +1,6 @@
 // app/v2/today/page.tsx — 오늘 수업: 미배정 최상단 → 오늘 → 어제 → 그전날 (최대 2일 수정 가능)
 import { Suspense } from 'react'
-import { createClient } from '@/lib/supabase/server'
+import { getCurrentUser } from '@/lib/v2/session'
 import { getTodayStudentsRaw, enrichMineCards, isClosedOn, getPastDayStudentsForMe, enrichPastDayStudents } from '@/lib/v2/data'
 import { buildTodayCards, groupCardsByHour } from '@/lib/v2/today'
 import { TodayCardItem, AssignableCardItem, PastDayCardItem } from './parts'
@@ -31,9 +31,8 @@ function hourLabel(hour: number | null): string {
 }
 
 async function TodayContent() {
-  const supabase = await createClient()
-  const [{ data: { user } }, isClosed, todayRaw, yesterday, dayBefore] = await Promise.all([
-    supabase.auth.getUser(),
+  const [user, isClosed, todayRaw, yesterday, dayBefore] = await Promise.all([
+    getCurrentUser(),
     isClosedOn(),
     getTodayStudentsRaw(),
     getPastDayStudentsForMe(1),
