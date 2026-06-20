@@ -1,4 +1,4 @@
-// app/v2/director/stats/page.tsx — 영법 완주 기간 통계 대시보드
+// app/v2/director/stats/page.tsx — 영법 완주 수업 횟수 통계 대시보드
 import { redirect } from 'next/navigation'
 import { getCurrentRole } from '@/lib/v2/session'
 import { getProgressDashboard } from '@/lib/v2/data'
@@ -30,7 +30,7 @@ function BarChart({ items, maxVal }: {
                 style={{ width: `${Math.max(pct, 4)}%` }}
               >
                 <span className="text-[10px] font-bold text-gray-900 whitespace-nowrap">
-                  {item.value}일
+                  {item.value}회
                 </span>
               </div>
             </div>
@@ -46,18 +46,18 @@ export default async function StatsPage() {
 
   const { byStroke, byInstructor } = await getProgressDashboard()
 
-  const maxAvg = Math.max(...byStroke.map(s => s.avgDays), 1)
+  const maxAvg = Math.max(...byStroke.map(s => s.avgSessions), 1)
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-lg font-bold text-white">진도 통계</h1>
-        <p className="text-xs text-white/40 mt-0.5">처음부터 시작한 학생 기준 · 영법별 완주 소요 기간</p>
+        <p className="text-xs text-white/40 mt-0.5">처음부터 시작한 학생 기준 · 영법별 완주까지 출석 수업 횟수</p>
       </div>
 
-      {/* 영법별 평균 기간 */}
+      {/* 영법별 평균 횟수 */}
       <section className="bg-[#1a1a2e] rounded-xl border border-white/8 p-5 space-y-4">
-        <h2 className="text-sm font-semibold text-white/60 uppercase tracking-wider">영법별 평균 완주 기간</h2>
+        <h2 className="text-sm font-semibold text-white/60 uppercase tracking-wider">영법별 평균 완주 수업 횟수</h2>
         {byStroke.length === 0 ? (
           <p className="text-center py-6 text-white/30 text-sm">아직 완주 데이터 없음</p>
         ) : (
@@ -66,9 +66,9 @@ export default async function StatsPage() {
               maxVal={maxAvg}
               items={byStroke.map(s => ({
                 label: s.strokeLabel,
-                value: s.avgDays,
+                value: s.avgSessions,
                 color: s.color,
-                sub: `${s.count}명 · 최단 ${s.minDays}일 / 최장 ${s.maxDays}일`,
+                sub: `${s.count}명 · 최소 ${s.minSessions}회 / 최대 ${s.maxSessions}회`,
               }))}
             />
             {/* 요약 카드 */}
@@ -81,7 +81,7 @@ export default async function StatsPage() {
                       {s.strokeLabel}
                     </span>
                     <p className="text-xl font-bold text-white">
-                      {s.avgDays}<span className="text-xs text-white/40 font-normal ml-0.5">일</span>
+                      {s.avgSessions}<span className="text-xs text-white/40 font-normal ml-0.5">회</span>
                     </p>
                     <p className="text-[10px] text-white/30">{s.count}명 완주</p>
                   </div>
@@ -94,7 +94,7 @@ export default async function StatsPage() {
 
       {/* 강사별 영법 평균 */}
       <section className="space-y-3">
-        <h2 className="text-sm font-semibold text-white/60 uppercase tracking-wider">강사별 완주 기간</h2>
+        <h2 className="text-sm font-semibold text-white/60 uppercase tracking-wider">강사별 완주 수업 횟수</h2>
         {byInstructor.length === 0 ? (
           <div className="bg-[#1a1a2e] rounded-xl border border-white/8 py-8 text-center text-white/30 text-sm">
             아직 데이터 없음
@@ -113,20 +113,20 @@ export default async function StatsPage() {
                   {inst.strokes.map(s => {
                     const { badge } = strokeBadge(s.strokeKey)
                     const overall = byStroke.find(b => b.strokeKey === s.strokeKey)
-                    const diff = overall ? s.avgDays - overall.avgDays : 0
+                    const diff = overall ? s.avgSessions - overall.avgSessions : 0
                     return (
                       <div key={s.strokeKey} className="bg-white/5 rounded-lg p-2.5 space-y-1">
                         <span className={`inline-block text-[10px] px-1.5 py-0.5 rounded-full font-semibold ${badge}`}>
                           {s.strokeLabel}
                         </span>
                         <p className="text-base font-bold text-white">
-                          {s.avgDays}<span className="text-[10px] text-white/40 font-normal ml-0.5">일</span>
+                          {s.avgSessions}<span className="text-[10px] text-white/40 font-normal ml-0.5">회</span>
                         </p>
                         <div className="flex items-center justify-between">
                           <span className="text-[10px] text-white/30">{s.count}명</span>
                           {overall && (
                             <span className={`text-[10px] font-medium ${diff < 0 ? 'text-teal-400' : diff > 0 ? 'text-red-400' : 'text-white/30'}`}>
-                              {diff === 0 ? '평균' : diff < 0 ? `↓${Math.abs(diff)}일` : `↑${diff}일`}
+                              {diff === 0 ? '평균' : diff < 0 ? `↓${Math.abs(diff)}회` : `↑${diff}회`}
                             </span>
                           )}
                         </div>
