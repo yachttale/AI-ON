@@ -7,7 +7,7 @@ import type { SkillStep, SkillProgress, Measurement, ProgressSource, Attendance 
 import type { TodayStudent, TodaySession, TodayCard, TodayCardView, MasterLapEntry } from './today'
 import { buildTodayCardView } from './today'
 import { buildStrokeLadders, selectCardWindow, type LadderInputStep, type StrokeLadderView } from './ladder'
-import { getTodayEntries } from '@/lib/schedule'
+import { getTodayEntries, parseSchedule } from '@/lib/schedule'
 import { kstToday, kstWeekday, kstDaysAgo } from '@/lib/v2/now'
 import type { DashboardInput } from './dashboard'
 
@@ -1016,4 +1016,62 @@ export async function getInstructorDetail(instructorId: string): Promise<Instruc
     todayDone, todayScheduled, withdrawalRate,
     strokeGroups, recentPasses,
   }
+}
+
+// 일주일 시간표 — 요일×시간 슬롯별 강사+학생 목록
+const DAY_TO_JS: Record<string, number> = { '월': 1, '화': 2, '수': 3, '목': 4, '금': 5, '토': 6 }
+
+export interface TimetableStudent { id: string; name: string }
+export interface TimetableInstructorGroup {
+  instructorId: string | null; instructorName: string | null
+  students: TimetableStudent[]
+}
+export type TimetableMap = Map<string, TimetableInstructorGroup[]> // key: `${jsDay}-${hour24}`
+
+export async function getWeeklyTimetable(): Promise<TimetableMap> {
+  const supabase = await createClient()
+  const [{ data: students }, { data: sdi }, { data: profiles }] = await Promise.all([
+    supabase.from('students').select('id,name,schedule,instructor_id').eq('is_active', true),
+    supabase.from('student_day_instructors').select('student_id,weekday,instructor_id'),
+    supabase.from('profiles').select('id,name'),
+  ])
+
+  const nameById = new Map((profiles ?? []).map(p => [p.id, p.name]))
+  const dayAssign = new Map<string, Map<number, string>>()
+  for (const r of sdi ?? []) {
+    if (!dayAssign.has(r.student_id)) dayAssign.set(r.student_id, new Map())
+    dayAssign.get(r.student_id)!.set(r.weekday, r.instructor_id)
+  }
+
+  const slotMap = new Map<string, Map<string, TimetableStudent[]>>()
+  for (const s of students ?? []) {
+    if (!s.schedule) continue
+    for (const e of parseSchedule(s.schedule)) {
+      const jsDay = DAY_TO_JS[e.day]
+      if (!jsDay) continue
+      const instructorId = dayAssign.get(s.id)?.get(jsDay) ?? s.instructor_id ?? null
+      const slotKey = `${jsDay}-${e.hour}`
+      const instKey = instructorId ?? '__none__'
+      if (!slotMap.has(slotKey)) slotMap.set(slotKey, new Map())
+      const instMap = slotMap.get(slotKey)!
+      if (!instMap.has(instKey)) instMap.set(instKey, [])
+      instMap.get(instKey)!.push({ id: s.id, name: s.name })
+    }
+  }
+
+  const result: TimetableMap = new Map()
+  for (const [slotKey, instMap] of slotMap) {
+    const groups: TimetableInstructorGroup[] = []
+    for (const [instKey, stus] of instMap) {
+      const instructorId = instKey === '__none__' ? null : instKey
+      groups.push({
+        instructorId,
+        instructorName: instructorId ? (nameById.get(instructorId) ?? null) : null,
+        students: stus.sort((a, b) => a.name.localeCompare(b.name, 'ko')),
+      })
+    }
+    groups.sort((a, b) => (a.instructorName ?? '').localeCompare(b.instructorName ?? '', 'ko'))
+    result.set(slotKey, groups)
+  }
+  return result
 }
