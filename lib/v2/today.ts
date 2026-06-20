@@ -134,10 +134,13 @@ export function groupCardsByHour(cards: TodayCardView[]): HourGroup[] {
     // 미입력·미결석 먼저, 기록완료/결석 뒤로
     cards: [...cs].sort((a, b) => Number(a.recordedToday || a.absent) - Number(b.recordedToday || b.absent)),
   }))
-  // 정렬: 시간 오름차순, 시간 미상(null) 맨 뒤
+  // 정렬: 실제 시계 시각(12시간) 오름차순, 시간 미상(null) 맨 뒤.
+  // toHour24가 토요일 9시를 21로 저장(오후 가정)하므로 raw 24h로 정렬하면 9시가 10·11시 뒤로 감.
+  // 시계 시각으로 환산하면 주중 4~8시, 토 9~11시 모두 올바른 순서가 됨.
+  const clock = (h: number) => (h > 12 ? h - 12 : h)
   return groups.sort((a, b) => {
     if (a.hour === null) return 1
     if (b.hour === null) return -1
-    return a.hour - b.hour
+    return clock(a.hour) - clock(b.hour)
   })
 }

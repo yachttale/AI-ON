@@ -59,6 +59,10 @@ describe('groupCardsByHour', () => {
     const groups = groupCardsByHour([mk('p', 14, false), mk('n', 17, true), mk('c', 16, false)])
     expect(groups.map(g => g.hour)).toEqual([14, 16, 17])
   })
+  it('토요일 오전(9시=21·10시=10·11시=11)은 9→10→11 순서', () => {
+    const groups = groupCardsByHour([mk('eleven', 11, false), mk('nine', 21, false), mk('ten', 10, false)])
+    expect(groups.map(g => g.hour)).toEqual([21, 10, 11]) // 시계로 9,10,11시
+  })
   it('같은 시간 그룹 내 미입력이 위로', () => {
     const groups = groupCardsByHour([mk('done', 16, true), mk('todo', 16, false)])
     expect(groups[0].cards.map(c => c.id)).toEqual(['todo', 'done'])
