@@ -54,7 +54,7 @@ export default async function StudentDashboardPage({ params }: { params: Promise
       </section>
 
       <StudentManage studentId={id} isDirector={isDirector} currentInstructorId={d.instructorId}
-        instructors={instructors} withdrawalStatus={d.withdrawalStatus} />
+        currentSchedule={d.schedule} instructors={instructors} withdrawalStatus={d.withdrawalStatus} />
 
       {/* 리포트: 마스터 패널 or 레이더 + 지표 타일 */}
       {isMaster

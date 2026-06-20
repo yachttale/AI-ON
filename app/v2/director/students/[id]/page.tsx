@@ -2,7 +2,6 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { ArrowLeft } from 'lucide-react'
-import { createClient } from '@/lib/supabase/server'
 import { getStudentDashboard, getInstructors } from '@/lib/v2/data'
 import { relDayLabel } from '@/lib/v2/now'
 import { StrokeRadar } from '@/app/v2/student/[id]/StrokeRadar'
@@ -67,13 +66,15 @@ export default async function DirectorStudentDetailPage({
         </div>
       </div>
 
-      {/* 관리 (강사 배정, 퇴원) */}
+      {/* 관리 (강사 배정, 반 시간, 퇴원) */}
       <StudentManage
         studentId={id}
         isDirector={true}
         currentInstructorId={d.instructorId}
+        currentSchedule={d.schedule}
         instructors={instructors}
         withdrawalStatus={d.withdrawalStatus}
+        dark
       />
 
       {/* 통계 + 레이더 */}

@@ -181,6 +181,15 @@ export async function setStudentInstructor(studentId: string, instructorId: stri
   for (const p of ['/v2/today', '/v2/students', '/v2/director', '/v2/director/students', `/v2/student/${studentId}`]) revalidatePath(p)
 }
 
+// 반(수업 시간) 변경 — 원장 전용. 예: "월4시,수4시". 빈 값이면 null.
+export async function updateStudentSchedule(studentId: string, schedule: string) {
+  const { supabase } = await ctx()
+  if (!await isDirector()) throw new Error('Forbidden')
+  const { error } = await supabase.from('students').update({ schedule: schedule.trim() || null }).eq('id', studentId)
+  if (error) throw error
+  for (const p of ['/v2/today', '/v2/director', '/v2/director/students', '/v2/director/timetable', `/v2/student/${studentId}`, `/v2/director/students/${studentId}`]) revalidatePath(p)
+}
+
 // 퇴원 신청(강사) → pending. 원장이 승인하면 비활성.
 export async function requestWithdrawal(studentId: string, note?: string) {
   const { supabase, userId } = await ctx(); await assertOwns(supabase, userId, studentId)
