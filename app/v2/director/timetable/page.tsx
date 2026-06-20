@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import { getWeeklyTimetable, type TimetableInstructorGroup } from '@/lib/v2/data'
+import { strokeBadge } from '@/lib/v2/stroke-colors'
 
 const WEEKDAY_COLS = [
   { label: '월', jsDay: 1 },
@@ -62,12 +63,16 @@ function InstructorGroups({
               {g.instructorName ?? '미배정'}
             </p>
             <div className="space-y-0.5">
-              {g.students.map(s => (
-                <Link key={s.id} href={`/v2/director/students/${s.id}`}
-                  className="block text-[11px] text-white/65 hover:text-white leading-tight truncate">
-                  {s.name}
-                </Link>
-              ))}
+              {g.students.map(s => {
+                const bar = strokeBadge(s.strokeKey).bar
+                return (
+                  <Link key={s.id} href={`/v2/director/students/${s.id}`}
+                    className="flex items-center gap-1 text-[11px] text-white/65 hover:text-white leading-tight">
+                    <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${bar}`} />
+                    <span className="truncate">{s.name}</span>
+                  </Link>
+                )
+              })}
             </div>
           </div>
         )

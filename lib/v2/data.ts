@@ -1021,7 +1021,7 @@ export async function getInstructorDetail(instructorId: string): Promise<Instruc
 // 일주일 시간표 — 요일×시간 슬롯별 강사+학생 목록
 const DAY_TO_JS: Record<string, number> = { '월': 1, '화': 2, '수': 3, '목': 4, '금': 5, '토': 6 }
 
-export interface TimetableStudent { id: string; name: string }
+export interface TimetableStudent { id: string; name: string; strokeKey: string | null }
 export interface TimetableInstructorGroup {
   instructorId: string | null; instructorName: string | null
   students: TimetableStudent[]
@@ -1030,13 +1030,27 @@ export type TimetableMap = Map<string, TimetableInstructorGroup[]> // key: `${js
 
 export async function getWeeklyTimetable(): Promise<TimetableMap> {
   const supabase = await createClient()
-  const [{ data: students }, { data: sdi }, { data: profiles }] = await Promise.all([
+  const [allSteps, { data: students }, { data: sdi }, { data: profiles }, { data: prog }] = await Promise.all([
+    getCachedLadderSteps(),
     supabase.from('students').select('id,name,schedule,instructor_id').eq('is_active', true),
     supabase.from('student_day_instructors').select('student_id,weekday,instructor_id'),
     supabase.from('profiles').select('id,name'),
+    supabase.from('skill_progress').select('student_id,skill_step_id').eq('source', 'observed'),
   ])
 
   const nameById = new Map((profiles ?? []).map(p => [p.id, p.name]))
+
+  const passedBy = new Map<string, Set<string>>()
+  for (const p of prog ?? []) {
+    if (!passedBy.has(p.student_id)) passedBy.set(p.student_id, new Set())
+    passedBy.get(p.student_id)!.add(p.skill_step_id)
+  }
+
+  const strokeKeyById = new Map<string, string | null>()
+  for (const s of students ?? []) {
+    strokeKeyById.set(s.id, computeCurrentStrokeKey(allSteps, passedBy.get(s.id) ?? new Set()))
+  }
+
   const dayAssign = new Map<string, Map<number, string>>()
   for (const r of sdi ?? []) {
     if (!dayAssign.has(r.student_id)) dayAssign.set(r.student_id, new Map())
@@ -1055,7 +1069,7 @@ export async function getWeeklyTimetable(): Promise<TimetableMap> {
       if (!slotMap.has(slotKey)) slotMap.set(slotKey, new Map())
       const instMap = slotMap.get(slotKey)!
       if (!instMap.has(instKey)) instMap.set(instKey, [])
-      instMap.get(instKey)!.push({ id: s.id, name: s.name })
+      instMap.get(instKey)!.push({ id: s.id, name: s.name, strokeKey: strokeKeyById.get(s.id) ?? null })
     }
   }
 
