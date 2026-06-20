@@ -55,12 +55,12 @@ describe('groupCardsByHour', () => {
     ...baseCard, id, classHour: hour, focusStrokeKey: null, focusStrokeLabel: null,
     recentPassed: [], chips: [], recordedToday: done, absent: false, masterLaps: null,
   })
-  it('현재 이후 그룹 먼저, 지난 그룹 뒤로, 그룹 내 미입력 먼저', () => {
-    const groups = groupCardsByHour([mk('p', 14, false), mk('n', 17, true), mk('c', 16, false)], 16)
-    expect(groups.map(g => g.hour)).toEqual([16, 17, 14]) // 현재16·예정17 먼저, 지난14 뒤
+  it('시간 오름차순 정렬', () => {
+    const groups = groupCardsByHour([mk('p', 14, false), mk('n', 17, true), mk('c', 16, false)])
+    expect(groups.map(g => g.hour)).toEqual([14, 16, 17])
   })
   it('같은 시간 그룹 내 미입력이 위로', () => {
-    const groups = groupCardsByHour([mk('done', 16, true), mk('todo', 16, false)], 16)
+    const groups = groupCardsByHour([mk('done', 16, true), mk('todo', 16, false)])
     expect(groups[0].cards.map(c => c.id)).toEqual(['todo', 'done'])
   })
 })

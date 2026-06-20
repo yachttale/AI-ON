@@ -121,9 +121,9 @@ export function buildTodayCardView(
   }
 }
 
-// 수업 시간별 그룹. 현재 시간 이후(진행/예정)를 먼저, 지난 수업을 뒤로. 각 그룹 내 미입력 먼저.
+// 수업 시간별 그룹. 시간 오름차순(4→5→6→7→8시, 토요일 9→10→11시). 각 그룹 내 미입력 먼저.
 export interface HourGroup { hour: number | null; cards: TodayCardView[] }
-export function groupCardsByHour(cards: TodayCardView[], currentHour: number = kstHour()): HourGroup[] {
+export function groupCardsByHour(cards: TodayCardView[]): HourGroup[] {
   const byHour = new Map<number | null, TodayCardView[]>()
   for (const c of cards) {
     const arr = byHour.get(c.classHour) ?? []
@@ -134,12 +134,10 @@ export function groupCardsByHour(cards: TodayCardView[], currentHour: number = k
     // 미입력·미결석 먼저, 기록완료/결석 뒤로
     cards: [...cs].sort((a, b) => Number(a.recordedToday || a.absent) - Number(b.recordedToday || b.absent)),
   }))
-  // 정렬: 시간 미상(null) 맨 뒤. 그 외 현재 이후 그룹을 앞으로(오름차순), 지난 그룹 뒤로(오름차순).
+  // 정렬: 시간 오름차순, 시간 미상(null) 맨 뒤
   return groups.sort((a, b) => {
     if (a.hour === null) return 1
     if (b.hour === null) return -1
-    const au = a.hour >= currentHour ? 0 : 1
-    const bu = b.hour >= currentHour ? 0 : 1
-    return au !== bu ? au - bu : a.hour - b.hour
+    return a.hour - b.hour
   })
 }
