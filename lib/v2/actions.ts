@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { getCurrentUser, getCurrentRole } from '@/lib/v2/session'
 import { kstToday, kstWeekday, kstDaysAgo } from '@/lib/v2/now'
+import { getTodayEntries } from '@/lib/schedule'
 import type { Attendance, MetricType, Difficulty } from '@/types/v2'
 
 async function ctx() {
@@ -25,11 +26,23 @@ async function assertOwns(supabase: Awaited<ReturnType<typeof createClient>>, us
 }
 const today = kstToday
 
-// 당일 session 보장(없으면 출석 기본). session id 반환.
+// 당일 session 보장. 이미 있으면 그 id, 없고 '오늘이 그 학생 수업일'이면 출석으로 생성.
+// 비수업일(예: 토요일반 학생을 평일에 진도 편집)에는 세션을 만들지 않고 null 반환 →
+// 진도/측정은 session_id=null 로 기록되고, 가짜 출석이 달력에 찍히지 않음.
+// 수업일 판정: 정규 스케줄 요일 ∪ 오늘 요일 배정(보강 '가져오기').
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function ensureSession(supabase: any, userId: string, studentId: string): Promise<string> {
+async function ensureSession(supabase: any, userId: string, studentId: string): Promise<string | null> {
   const { data: existing } = await supabase.from('sessions').select('id').eq('student_id', studentId).eq('session_date', today()).maybeSingle()
   if (existing) return existing.id
+  const weekday = kstWeekday()
+  const { data: stu } = await supabase.from('students').select('schedule').eq('id', studentId).maybeSingle()
+  let isClassDay = stu?.schedule ? getTodayEntries(stu.schedule, weekday).length > 0 : false
+  if (!isClassDay) {
+    const { data: a } = await supabase.from('student_day_instructors')
+      .select('student_id').eq('student_id', studentId).eq('weekday', weekday).maybeSingle()
+    isClassDay = !!a
+  }
+  if (!isClassDay) return null
   const { data, error } = await supabase.from('sessions')
     .insert({ student_id: studentId, instructor_id: userId, session_date: today(), attendance: '출석' })
     .select('id').single()
