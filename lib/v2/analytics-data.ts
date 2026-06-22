@@ -225,6 +225,7 @@ export interface StudentDashboard {
   stats: DashboardStats
   dailyLog: DayActivity[]       // 일별로 그날 한 것(연습·통과·측정) — 매일 기록이 보이도록
   feedbackDraft: string         // 부모 전송용 자동 초안(최근 한 달)
+  attendedDates: string[]       // 출석·지각한 날짜(미니 달력용)
 }
 const unitOf = (metric: string) => metric === 'time_sec' ? '초' : metric === 'stroke_count' ? '스트로크' : metric === 'laps' ? '바퀴' : 'm'
 function ageTextOf(birthdate: string | null): string | null {
@@ -279,6 +280,7 @@ export async function getStudentDashboard(studentId: string): Promise<StudentDas
   const recordDays = recordDates.size
   const presentN = (sessions ?? []).filter(s => s.attendance === '출석' || s.attendance === '지각').length
   const absentN = (sessions ?? []).filter(s => s.attendance === '결석').length
+  const attendedDates = (sessions ?? []).filter(s => s.attendance === '출석' || s.attendance === '지각').map(s => s.session_date)
   const totalPassed = strokeProgress.reduce((a, s) => a + s.passed, 0)
   const fav = [...strokeProgress].filter(s => s.passed > 0).sort((a, b) => b.passed - a.passed)[0]
   const stats: DashboardStats = {
@@ -344,7 +346,7 @@ export async function getStudentDashboard(studentId: string): Promise<StudentDas
     instructorName, instructorId,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     withdrawalStatus: (student as any).withdrawal_status ?? null,
-    currentStepLabel, strokeProgress, radar, stats, dailyLog, feedbackDraft: draft,
+    currentStepLabel, strokeProgress, radar, stats, dailyLog, feedbackDraft: draft, attendedDates,
   }
 }
 

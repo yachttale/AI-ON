@@ -3,9 +3,10 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { ArrowLeft } from 'lucide-react'
 import { getStudentDashboard, getInstructors } from '@/lib/v2/data'
-import { relDayLabel } from '@/lib/v2/now'
+import { relDayLabel, kstToday } from '@/lib/v2/now'
 import { StrokeRadar } from '@/app/v2/student/[id]/StrokeRadar'
 import { StudentManage } from '@/app/v2/student/[id]/StudentManage'
+import { AttendanceCalendar } from '@/app/v2/student/[id]/AttendanceCalendar'
 
 const KIND_STYLE: Record<string, string> = {
   pass: 'bg-blue-500/20 text-blue-300',
@@ -76,6 +77,9 @@ export default async function DirectorStudentDetailPage({
         withdrawalStatus={d.withdrawalStatus}
         dark
       />
+
+      {/* 최근 출석 미니 달력 */}
+      <AttendanceCalendar attendedDates={d.attendedDates} today={kstToday()} dark />
 
       {/* 통계 + 레이더 */}
       <div className="bg-[#1a1a2e] rounded-2xl border border-white/8 p-5 space-y-4">

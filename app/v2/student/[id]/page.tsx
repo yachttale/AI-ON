@@ -3,11 +3,12 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { getCurrentRole } from '@/lib/v2/session'
 import { getStudentDashboard, getInstructors, getStudentMasterStats, computeCurrentStrokeKey, getCachedLadderSteps, getStudentPassedStepIds } from '@/lib/v2/data'
-import { relDayLabel } from '@/lib/v2/now'
+import { relDayLabel, kstToday } from '@/lib/v2/now'
 import { StrokeRadar } from './StrokeRadar'
 import { FeedbackDraft } from './FeedbackDraft'
 import { StudentManage } from './StudentManage'
 import { MasterPanel } from './MasterPanel'
+import { AttendanceCalendar } from './AttendanceCalendar'
 
 const KIND_STYLE: Record<string, string> = {
   pass: 'bg-blue-100 text-blue-700',
@@ -55,6 +56,9 @@ export default async function StudentDashboardPage({ params }: { params: Promise
 
       <StudentManage studentId={id} isDirector={isDirector} currentInstructorId={d.instructorId}
         currentSchedule={d.schedule} instructors={instructors} withdrawalStatus={d.withdrawalStatus} />
+
+      {/* 최근 출석 미니 달력 */}
+      <AttendanceCalendar attendedDates={d.attendedDates} today={kstToday()} />
 
       {/* 리포트: 마스터 패널 or 레이더 + 지표 타일 */}
       {isMaster
