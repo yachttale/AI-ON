@@ -8,9 +8,9 @@ const students: TodayStudent[] = [
   { id: 'd', name: '최', grade: null, schedule: '월7시', instructor_id: null, instructor_name: null },
 ]
 
-const sessA: TodaySession = { attendance: '출석', laps: 12, status: null, inputSource: null, reportedStepId: null }
-const sessPending: TodaySession = { attendance: '출석', laps: 3, status: 'pending', inputSource: 'child', reportedStepId: 'step-1' }
-const sessConfirmed: TodaySession = { attendance: '출석', laps: 5, status: 'confirmed', inputSource: 'child', reportedStepId: 'step-1' }
+const sessA: TodaySession = { attendance: '출석', laps: 12, status: null, inputSource: null, reportedStepId: null, instructorId: null, instructorName: null }
+const sessPending: TodaySession = { attendance: '출석', laps: 3, status: 'pending', inputSource: 'child', reportedStepId: 'step-1', instructorId: null, instructorName: null }
+const sessConfirmed: TodaySession = { attendance: '출석', laps: 5, status: 'confirmed', inputSource: 'child', reportedStepId: 'step-1', instructorId: null, instructorName: null }
 
 describe('buildTodayCards', () => {
   it('월요일(=1): 내 반은 mine, 미배정·타반은 assignable, 다른 요일은 제외', () => {

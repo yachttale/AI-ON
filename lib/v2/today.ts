@@ -14,6 +14,8 @@ export interface TodaySession {
   status: 'pending' | 'confirmed' | null
   inputSource: 'child' | 'instructor' | null
   reportedStepId: string | null
+  instructorId: string | null      // 그 세션을 기록한 강사(보강 담당 식별·표시용)
+  instructorName: string | null
 }
 export interface TodayCard extends TodayStudent {
   attendance: Attendance | null; laps: number | null; mine: boolean

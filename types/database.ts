@@ -27,7 +27,7 @@ export interface SessionLog {
   id: string
   session_date: string
   student_id: string
-  instructor_id: string
+  instructor_id: string | null
   attendance: Attendance
   absence_reason: AbsenceReason | null
   memo: string | null

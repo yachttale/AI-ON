@@ -22,6 +22,10 @@ async function assertOwns(supabase: Awaited<ReturnType<typeof createClient>>, us
   const { data: a } = await supabase.from('student_day_instructors')
     .select('instructor_id').eq('student_id', studentId).eq('weekday', weekday).maybeSingle()
   if (a?.instructor_id === userId) return  // 오늘 요일 배정(오버라이드)
+  // 오늘 보강 담당(그날 세션 instructor_id 본인) — 비수업일 학생이라 위 조건엔 안 걸림
+  const { data: sess } = await supabase.from('sessions')
+    .select('instructor_id').eq('student_id', studentId).eq('session_date', kstToday()).maybeSingle()
+  if (sess?.instructor_id === userId) return
   throw new Error('Forbidden')
 }
 const today = kstToday
@@ -93,6 +97,42 @@ export async function unassignFromDay(studentId: string) {
   revalidatePath('/v2/today')
   revalidatePath(`/v2/student/${studentId}`)
   revalidatePath(`/v2/student/${studentId}/progress`)
+}
+
+// ── 오늘 보강 ──────────────────────────────────────────────────────────────
+// 보강 추가: 비수업일 학생의 오늘 세션을 '미배정'(instructor_id=null·출석)으로 생성.
+//   원장/강사 누구나. 실제 수업 강사는 claimMakeup으로 가져가 기록.
+export async function addMakeup(studentId: string) {
+  const { supabase } = await ctx()
+  const { data: existing } = await supabase.from('sessions').select('id').eq('student_id', studentId).eq('session_date', today()).maybeSingle()
+  if (existing) return  // 이미 오늘 세션 있음(정규/보강) — 중복 방지
+  const { error } = await supabase.from('sessions')
+    .insert({ student_id: studentId, session_date: today(), attendance: '출석', instructor_id: null })
+  if (error) throw error
+  revalidatePath('/v2/today')
+}
+
+// 보강 가져가기: 오늘 세션 담당을 본인으로(그날만, 매주 반복 아님).
+export async function claimMakeup(studentId: string) {
+  const { supabase, userId } = await ctx()
+  const { error } = await supabase.from('sessions')
+    .update({ instructor_id: userId }).eq('student_id', studentId).eq('session_date', today())
+  if (error) throw error
+  revalidatePath('/v2/today')
+}
+
+// 보강 취소: 진도/측정 기록이 없을 때만 오늘 세션 삭제.
+export async function removeMakeup(studentId: string) {
+  const { supabase } = await ctx()
+  const t = today()
+  const [{ count: measCount }, { count: progCount }] = await Promise.all([
+    supabase.from('measurements').select('id', { count: 'exact', head: true }).eq('student_id', studentId).eq('measured_on', t),
+    supabase.from('skill_progress').select('id', { count: 'exact', head: true }).eq('student_id', studentId).eq('passed_at', t),
+  ])
+  if ((measCount ?? 0) > 0 || (progCount ?? 0) > 0) throw new Error('기록이 있어 취소할 수 없습니다')
+  const { error } = await supabase.from('sessions').delete().eq('student_id', studentId).eq('session_date', t)
+  if (error) throw error
+  revalidatePath('/v2/today')
 }
 
 export async function markAttendance(studentId: string, attendance: Attendance) {

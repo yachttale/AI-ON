@@ -3,7 +3,11 @@ import { Suspense } from 'react'
 import { getCurrentUser } from '@/lib/v2/session'
 import { getTodayStudentsRaw, enrichMineCards, isClosedOn, getPastDayStudentsForMe, enrichPastDayStudents } from '@/lib/v2/data'
 import { buildTodayCards, groupCardsByHour } from '@/lib/v2/today'
+import type { TodayCard } from '@/lib/v2/today'
+import { kstWeekday } from '@/lib/v2/now'
+import { getTodayEntries } from '@/lib/schedule'
 import { TodayCardItem, AssignableCardItem, PastDayCardItem } from './parts'
+import { MakeupSection } from './MakeupSection'
 
 function TodaySkeleton() {
   return (
@@ -51,8 +55,30 @@ async function TodayContent() {
 
   const { students, sessionById, reportedStepById } = todayRaw
   const { mine, assignable } = buildTodayCards(students, sessionById, user!.id, undefined, reportedStepById)
-  const [cards, yesterdayCards, dayBeforeCards] = await Promise.all([
+
+  // 오늘 보강 = 오늘 세션이 있으나 오늘이 정규 수업일이 아닌 학생(세션 담당 강사로 카드 구성)
+  const weekday = kstWeekday()
+  const makeupBase: TodayCard[] = students
+    .filter(s => {
+      const sess = sessionById.get(s.id)
+      return !!sess && (!s.schedule || getTodayEntries(s.schedule, weekday).length === 0)
+    })
+    .map(s => {
+      const sess = sessionById.get(s.id)!
+      return {
+        id: s.id, name: s.name, grade: s.grade, schedule: s.schedule,
+        instructor_id: sess.instructorId, instructor_name: sess.instructorName,
+        attendance: sess.attendance, laps: sess.laps,
+        mine: sess.instructorId === user!.id,
+        status: sess.status, inputSource: sess.inputSource,
+        reportedStepId: sess.reportedStepId,
+        reportedStep: sess.reportedStepId ? reportedStepById.get(sess.reportedStepId) ?? null : null,
+      }
+    })
+
+  const [cards, makeupCards, yesterdayCards, dayBeforeCards] = await Promise.all([
     enrichMineCards(mine),
+    enrichMineCards(makeupBase),
     enrichPastDayStudents(yesterday.students, yesterday.date),
     enrichPastDayStudents(dayBefore.students, dayBefore.date),
   ])
@@ -60,10 +86,17 @@ async function TodayContent() {
   const todoCount = cards.filter(c => !c.recordedToday && !c.absent).length
   const unassigned = assignable.filter(c => !c.instructor_id)
 
+  // 검색용: 오늘 정규수업·보강에 안 들어간 활성 학생
+  const usedIds = new Set([...mine, ...assignable, ...makeupBase].map(c => c.id))
+  const searchStudents = students.filter(s => !usedIds.has(s.id)).map(s => ({ id: s.id, name: s.name, grade: s.grade }))
+
   return (
     <div className="space-y-5">
 
-      {/* 1. 미배정 학생 — 최상단 */}
+      {/* 0. 오늘의 보강 — 제일 상단 */}
+      <MakeupSection makeups={makeupCards} searchStudents={searchStudents} />
+
+      {/* 1. 미배정 학생 */}
       {unassigned.length > 0 && (
         <section className="space-y-2">
           <h3 className="text-sm font-semibold text-gray-700">

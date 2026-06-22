@@ -78,7 +78,7 @@ export async function getTodayStudentsRaw(): Promise<{
     supabase.from('students').select('id,name,grade,schedule,instructor_id').eq('is_active', true).order('name'),
     supabase.from('profiles').select('id,name'),
     supabase.from('student_day_instructors').select('student_id,instructor_id').eq('weekday', weekday),
-    supabase.from('sessions').select('student_id,attendance,status,input_source,reported_step_id').eq('session_date', today),
+    supabase.from('sessions').select('student_id,attendance,status,input_source,reported_step_id,instructor_id').eq('session_date', today),
     supabase.from('measurements').select('student_id,value').eq('metric_type', 'laps').is('skill_step_id', null).eq('measured_on', today),
   ])
   if (error) throw error
@@ -104,10 +104,12 @@ export async function getTodayStudentsRaw(): Promise<{
       status: s.status ?? null,
       inputSource: s.input_source ?? null,
       reportedStepId: s.reported_step_id ?? null,
+      instructorId: s.instructor_id ?? null,
+      instructorName: s.instructor_id ? nameById.get(s.instructor_id) ?? null : null,
     })
   }
   for (const [sid, v] of lapByStudent) {
-    if (!sessionById.has(sid)) sessionById.set(sid, { attendance: null, laps: v, status: null, inputSource: null, reportedStepId: null })
+    if (!sessionById.has(sid)) sessionById.set(sid, { attendance: null, laps: v, status: null, inputSource: null, reportedStepId: null, instructorId: null, instructorName: null })
   }
   const reportedStepIds = [...sessionById.values()].map(s => s.reportedStepId).filter((id): id is string => id != null)
   if (reportedStepIds.length) {
