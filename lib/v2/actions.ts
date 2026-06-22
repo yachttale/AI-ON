@@ -121,16 +121,11 @@ export async function claimMakeup(studentId: string) {
   revalidatePath('/v2/today')
 }
 
-// 보강 취소: 진도/측정 기록이 없을 때만 오늘 세션 삭제.
+// 보강 취소: 오늘 세션 삭제. 진도/측정은 on delete set null 로 보존(출석 표시만 제거)되므로
+//   기록이 있어도 안전하게 취소 가능 — 비수업일 진도 편집으로 생긴 잘못된 보강도 정리할 수 있음.
 export async function removeMakeup(studentId: string) {
   const { supabase } = await ctx()
-  const t = today()
-  const [{ count: measCount }, { count: progCount }] = await Promise.all([
-    supabase.from('measurements').select('id', { count: 'exact', head: true }).eq('student_id', studentId).eq('measured_on', t),
-    supabase.from('skill_progress').select('id', { count: 'exact', head: true }).eq('student_id', studentId).eq('passed_at', t),
-  ])
-  if ((measCount ?? 0) > 0 || (progCount ?? 0) > 0) throw new Error('기록이 있어 취소할 수 없습니다')
-  const { error } = await supabase.from('sessions').delete().eq('student_id', studentId).eq('session_date', t)
+  const { error } = await supabase.from('sessions').delete().eq('student_id', studentId).eq('session_date', today())
   if (error) throw error
   revalidatePath('/v2/today')
 }

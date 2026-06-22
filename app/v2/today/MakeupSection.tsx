@@ -55,7 +55,11 @@ export function MakeupSection({ makeups, searchStudents }: {
         <div className="space-y-3">
           {makeups.map(c => c.instructor_id ? (
             <div key={c.id} className="space-y-1">
-              <p className="text-xs font-medium text-amber-700 px-1">수업: {c.instructor_name ?? '—'} 강사</p>
+              <div className="flex items-center justify-between px-1">
+                <p className="text-xs font-medium text-amber-700">수업: {c.instructor_name ?? '—'} 강사</p>
+                <button disabled={pending} onClick={() => run(() => removeMakeup(c.id))}
+                  className="text-xs text-gray-400 hover:text-red-500 disabled:opacity-50">보강 취소</button>
+              </div>
               <TodayCardItem card={c} />
             </div>
           ) : (
