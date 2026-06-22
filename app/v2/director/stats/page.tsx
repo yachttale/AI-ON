@@ -52,7 +52,7 @@ export default async function StatsPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-lg font-bold text-white">진도 통계</h1>
-        <p className="text-xs text-white/40 mt-0.5">처음부터 시작한 학생 기준 · 영법별 완주까지 출석 수업 횟수</p>
+        <p className="text-xs text-white/40 mt-0.5">직전 영법 완주 후 시작한 영법만 · 시작~완주 사이 출석 수업 횟수</p>
       </div>
 
       {/* 영법별 평균 횟수 */}

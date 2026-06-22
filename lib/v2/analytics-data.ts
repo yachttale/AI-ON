@@ -495,7 +495,7 @@ export async function getProgressDashboard(): Promise<ProgressDashboard> {
   const supabase = await createClient()
   const [allSteps, { data: prog }, { data: profiles }, { data: sessions }] = await Promise.all([
     getCachedLadderSteps(),
-    supabase.from('skill_progress').select('student_id,skill_step_id,passed_at,instructor_id').eq('source', 'observed'),
+    supabase.from('skill_progress').select('student_id,skill_step_id,passed_at,instructor_id,source'),
     supabase.from('profiles').select('id,name'),
     supabase.from('sessions').select('student_id,session_date,attendance'),
   ])
@@ -530,36 +530,56 @@ export async function getProgressDashboard(): Promise<ProgressDashboard> {
     if (last) lastIdByStroke.set(k, last.id)
   }
 
-  // 학생별 (단계→통과일), (단계→강사) 사전 인덱스 — O(N) 1회 구성
-  const studentStepDate = new Map<string, Map<string, string>>()
+  // 학생별 (단계→통과일) 사전 인덱스 — O(N) 1회 구성.
+  //   obsDate: source='observed'(강사가 실제 클릭) 통과일 → 영법 '시작 클릭' 기점 판정용.
+  //   allDate: 모든 source(baseline 포함) 통과일 → '직전 영법 완주' 판정용.
+  const obsDate = new Map<string, Map<string, string>>()
+  const allDate = new Map<string, Map<string, string>>()
   const studentStepInstructor = new Map<string, Map<string, string | null>>()
   for (const p of prog ?? []) {
-    if (!studentStepDate.has(p.student_id)) {
-      studentStepDate.set(p.student_id, new Map())
+    if (!allDate.has(p.student_id)) {
+      allDate.set(p.student_id, new Map())
+      obsDate.set(p.student_id, new Map())
       studentStepInstructor.set(p.student_id, new Map())
     }
-    studentStepDate.get(p.student_id)!.set(p.skill_step_id, p.passed_at)
+    allDate.get(p.student_id)!.set(p.skill_step_id, p.passed_at)
     studentStepInstructor.get(p.student_id)!.set(p.skill_step_id, p.instructor_id ?? null)
+    if (p.source === 'observed') obsDate.get(p.student_id)!.set(p.skill_step_id, p.passed_at)
   }
 
-  // 영법별 유효 데이터 집계 — 완주 사이 '출석 수업 횟수'(첫 통과일~마지막 통과일 포함)
+  // 영법별 유효 데이터 집계.
+  //   규칙: 영법 X는 '직전 영법을 완주한 뒤(=직전 영법 마지막 단계 통과일보다 나중에)
+  //         X 첫 단계를 클릭(observed)한' 학생만 집계. 시작 클릭일~X 완주일 사이 출석 수업 횟수.
+  //   - 등록 시 한꺼번에 입력된 시작 영법은 firstDate == prevLastDate(같은 등록일)라 제외.
+  //   - baseline으로 끝낸 영법도 '직전 영법 완주'로는 인정 → 그 다음 영법부터 집계.
+  //   - 초보(직전 영법 없음)·master(ladder 단계 없음)는 자동 제외.
   interface DataPoint { sessions: number; instructorId: string | null }
   const strokeData = new Map<string, DataPoint[]>()
 
-  for (const strokeKey of STROKE_ORDER_FOR_STATS) {
+  for (let i = 0; i < STROKE_ORDER_FOR_STATS.length; i++) {
+    const strokeKey = STROKE_ORDER_FOR_STATS[i]
     const firstIds = firstIdsByStroke.get(strokeKey)
     const lastId = lastIdByStroke.get(strokeKey)
     if (!firstIds || !lastId) continue
+    // 직전 영법의 마지막 단계 — 없으면(초보) 집계 제외
+    const prevKey = STROKE_ORDER_FOR_STATS[i - 1]
+    const prevLastId = prevKey ? lastIdByStroke.get(prevKey) : undefined
+    if (!prevLastId) continue
     const points: DataPoint[] = []
-    for (const [studentId, stepDates] of studentStepDate) {
+    for (const [studentId, obs] of obsDate) {
+      // X 첫 단계는 '클릭(observed)' 기점만 인정 — baseline 시작 영법 제외
       let firstDate: string | null = null
       for (const fid of firstIds) {
-        const d = stepDates.get(fid)
+        const d = obs.get(fid)
         if (d && (!firstDate || d < firstDate)) firstDate = d
       }
-      const lastDate = stepDates.get(lastId) ?? null
-      if (!firstDate || !lastDate || lastDate < firstDate) continue
-      // 첫 통과일~마지막 통과일(포함) 사이 출석 수업 수
+      if (!firstDate) continue
+      const lastDate = obs.get(lastId) ?? null
+      if (!lastDate || lastDate < firstDate) continue
+      // 직전 영법 완주일(baseline 포함)보다 나중에 X를 시작한 경우만 — 같은 등록일 일괄 입력 제외
+      const prevLastDate = allDate.get(studentId)?.get(prevLastId) ?? null
+      if (!prevLastDate || firstDate <= prevLastDate) continue
+      // 시작 클릭일~완주일(포함) 사이 출석 수업 수
       const attended = attendedByStudent.get(studentId) ?? []
       const sessions = attended.filter(d => d >= firstDate! && d <= lastDate).length
       if (sessions <= 0) continue
