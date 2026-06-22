@@ -484,6 +484,7 @@ const STROKE_ORDER_FOR_STATS = ['beginner', 'freestyle', 'backstroke', 'breastst
 export interface ProgressStat {
   strokeKey: string; strokeLabel: string; color: string | null
   count: number; avgSessions: number; minSessions: number; maxSessions: number
+  inProgress: { name: string; sessions: number }[]  // 진행 중(미완주) 학생 — sessions=시작 후 출석 수업 횟수
 }
 export interface InstructorProgressStat {
   instructorId: string; instructorName: string
@@ -493,13 +494,15 @@ export interface ProgressDashboard { byStroke: ProgressStat[]; byInstructor: Ins
 
 export async function getProgressDashboard(): Promise<ProgressDashboard> {
   const supabase = await createClient()
-  const [allSteps, { data: prog }, { data: profiles }, { data: sessions }] = await Promise.all([
+  const [allSteps, { data: prog }, { data: profiles }, { data: sessions }, { data: students }] = await Promise.all([
     getCachedLadderSteps(),
     supabase.from('skill_progress').select('student_id,skill_step_id,passed_at,instructor_id,source'),
     supabase.from('profiles').select('id,name'),
     supabase.from('sessions').select('student_id,session_date,attendance'),
+    supabase.from('students').select('id,name').eq('is_active', true),
   ])
   const nameById = new Map((profiles ?? []).map(p => [p.id, p.name]))
+  const studentNameById = new Map((students ?? []).map(s => [s.id, s.name]))
 
   // 학생별 출석(출석·지각) 수업 날짜 목록 — 완주 사이 '출석 수업 횟수' 집계용
   const attendedByStudent = new Map<string, string[]>()
@@ -555,6 +558,8 @@ export async function getProgressDashboard(): Promise<ProgressDashboard> {
   //   - 초보(직전 영법 없음)·master(ladder 단계 없음)는 자동 제외.
   interface DataPoint { sessions: number; instructorId: string | null }
   const strokeData = new Map<string, DataPoint[]>()
+  const inProgressData = new Map<string, { name: string; sessions: number }[]>()
+  const today = kstToday()
 
   for (let i = 0; i < STROKE_ORDER_FOR_STATS.length; i++) {
     const strokeKey = STROKE_ORDER_FOR_STATS[i]
@@ -566,6 +571,7 @@ export async function getProgressDashboard(): Promise<ProgressDashboard> {
     const prevLastId = prevKey ? lastIdByStroke.get(prevKey) : undefined
     if (!prevLastId) continue
     const points: DataPoint[] = []
+    const inProg: { name: string; sessions: number }[] = []
     for (const [studentId, obs] of obsDate) {
       // X 첫 단계는 '클릭(observed)' 기점만 인정 — baseline 시작 영법 제외
       let firstDate: string | null = null
@@ -574,32 +580,44 @@ export async function getProgressDashboard(): Promise<ProgressDashboard> {
         if (d && (!firstDate || d < firstDate)) firstDate = d
       }
       if (!firstDate) continue
-      const lastDate = obs.get(lastId) ?? null
-      if (!lastDate || lastDate < firstDate) continue
       // 직전 영법 완주일(baseline 포함)보다 나중에 X를 시작한 경우만 — 같은 등록일 일괄 입력 제외
       const prevLastDate = allDate.get(studentId)?.get(prevLastId) ?? null
       if (!prevLastDate || firstDate <= prevLastDate) continue
-      // 시작 클릭일~완주일(포함) 사이 출석 수업 수
       const attended = attendedByStudent.get(studentId) ?? []
-      const sessions = attended.filter(d => d >= firstDate! && d <= lastDate).length
-      if (sessions <= 0) continue
-      // 마지막 단계 통과 강사 — 사전 인덱스에서 O(1) 조회
-      const instructorId = studentStepInstructor.get(studentId)?.get(lastId) ?? null
-      points.push({ sessions, instructorId })
+      const lastDate = obs.get(lastId) ?? null
+      if (lastDate && lastDate >= firstDate) {
+        // 완주 — 시작 클릭일~완주일(포함) 사이 출석 수업 수
+        const sessions = attended.filter(d => d >= firstDate! && d <= lastDate).length
+        if (sessions <= 0) continue
+        const instructorId = studentStepInstructor.get(studentId)?.get(lastId) ?? null
+        points.push({ sessions, instructorId })
+      } else if (!lastDate) {
+        // 진행 중(미완주) — 시작 클릭일~오늘 사이 출석 수업 수
+        const sessions = attended.filter(d => d >= firstDate! && d <= today).length
+        if (sessions <= 0) continue
+        inProg.push({ name: studentNameById.get(studentId) ?? '?', sessions })
+      }
     }
     if (points.length > 0) strokeData.set(strokeKey, points)
+    if (inProg.length > 0) {
+      inProg.sort((a, b) => b.sessions - a.sessions)
+      inProgressData.set(strokeKey, inProg)
+    }
   }
 
   const byStroke: ProgressStat[] = []
   for (const strokeKey of STROKE_ORDER_FOR_STATS) {
     const pts = strokeData.get(strokeKey)
-    if (!pts) continue
+    const inProgress = inProgressData.get(strokeKey) ?? []
+    if (!pts && inProgress.length === 0) continue  // 완주·진행 중 둘 다 없으면 생략
     const meta = strokeMeta.get(strokeKey)!
-    const counts = pts.map(p => p.sessions)
+    const counts = (pts ?? []).map(p => p.sessions)
     byStroke.push({
       strokeKey, strokeLabel: meta.label, color: meta.color, count: counts.length,
-      avgSessions: Math.round(counts.reduce((a, b) => a + b, 0) / counts.length),
-      minSessions: Math.min(...counts), maxSessions: Math.max(...counts),
+      avgSessions: counts.length ? Math.round(counts.reduce((a, b) => a + b, 0) / counts.length) : 0,
+      minSessions: counts.length ? Math.min(...counts) : 0,
+      maxSessions: counts.length ? Math.max(...counts) : 0,
+      inProgress,
     })
   }
 

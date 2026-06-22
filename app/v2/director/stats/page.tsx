@@ -59,12 +59,12 @@ export default async function StatsPage() {
       <section className="bg-[#1a1a2e] rounded-xl border border-white/8 p-5 space-y-4">
         <h2 className="text-sm font-semibold text-white/60 uppercase tracking-wider">영법별 평균 완주 수업 횟수</h2>
         {byStroke.length === 0 ? (
-          <p className="text-center py-6 text-white/30 text-sm">아직 완주 데이터 없음</p>
+          <p className="text-center py-6 text-white/30 text-sm">아직 데이터 없음</p>
         ) : (
           <>
             <BarChart
               maxVal={maxAvg}
-              items={byStroke.map(s => ({
+              items={byStroke.filter(s => s.count > 0).map(s => ({
                 label: s.strokeLabel,
                 value: s.avgSessions,
                 color: s.color,
@@ -81,9 +81,24 @@ export default async function StatsPage() {
                       {s.strokeLabel}
                     </span>
                     <p className="text-xl font-bold text-white">
-                      {s.avgSessions}<span className="text-xs text-white/40 font-normal ml-0.5">회</span>
+                      {s.count > 0 ? s.avgSessions : '−'}<span className="text-xs text-white/40 font-normal ml-0.5">회</span>
                     </p>
                     <p className="text-[10px] text-white/30">{s.count}명 완주</p>
+                    {s.inProgress.length > 0 && (
+                      <details className="pt-1.5 border-t border-white/5">
+                        <summary className="text-[10px] text-teal-300/80 cursor-pointer select-none marker:text-teal-300/50">
+                          진행 중 {s.inProgress.length}명
+                        </summary>
+                        <ul className="mt-1.5 space-y-1">
+                          {s.inProgress.map((p, i) => (
+                            <li key={i} className="flex items-center justify-between text-[10px]">
+                              <span className="text-white/70 truncate">{p.name}</span>
+                              <span className="text-white/40 shrink-0 ml-1">{p.sessions}회째</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </details>
+                    )}
                   </div>
                 )
               })}
