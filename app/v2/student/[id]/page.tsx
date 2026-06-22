@@ -58,7 +58,7 @@ export default async function StudentDashboardPage({ params }: { params: Promise
         currentSchedule={d.schedule} instructors={instructors} withdrawalStatus={d.withdrawalStatus} />
 
       {/* 최근 출석 미니 달력 */}
-      <AttendanceCalendar attendedDates={d.attendedDates} today={kstToday()} />
+      <AttendanceCalendar attendedDates={d.attendedDates} absentDates={d.absentDates} today={kstToday()} />
 
       {/* 리포트: 마스터 패널 or 레이더 + 지표 타일 */}
       {isMaster

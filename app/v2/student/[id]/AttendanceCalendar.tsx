@@ -8,10 +8,11 @@ function ymd(dt: Date) {
   return `${y}-${m}-${d}`
 }
 
-export function AttendanceCalendar({ attendedDates, today, dark }: {
-  attendedDates: string[]; today: string; dark?: boolean
+export function AttendanceCalendar({ attendedDates, absentDates = [], today, dark }: {
+  attendedDates: string[]; absentDates?: string[]; today: string; dark?: boolean
 }) {
   const attended = new Set(attendedDates)
+  const absent = new Set(absentDates)
   const [ty, tm] = today.split('-').map(Number) // 연, 월(1~12)
   const firstOfMonth = new Date(ty, tm - 1, 1)
   const daysInMonth = new Date(ty, tm, 0).getDate()
@@ -24,18 +25,21 @@ export function AttendanceCalendar({ attendedDates, today, dark }: {
   const lastMonday = new Date(ty, tm - 1, daysInMonth + (lastDow === 0 ? -6 : 1 - lastDow))
   const weekCount = Math.round((lastMonday.getTime() - gridStart.getTime()) / (7 * 86400000)) + 1
 
-  const weeks: { date: string; day: number; inMonth: boolean; attended: boolean; isToday: boolean; future: boolean }[][] = []
+  const weeks: { date: string; day: number; inMonth: boolean; attended: boolean; absent: boolean; isToday: boolean; future: boolean }[][] = []
   let attendedCount = 0
+  let absentCount = 0
   for (let w = 0; w < weekCount; w++) {
-    const row: { date: string; day: number; inMonth: boolean; attended: boolean; isToday: boolean; future: boolean }[] = []
+    const row: { date: string; day: number; inMonth: boolean; attended: boolean; absent: boolean; isToday: boolean; future: boolean }[] = []
     for (let dd = 0; dd < 6; dd++) { // 월~토(일요일 제외)
       const cell = new Date(gridStart)
       cell.setDate(gridStart.getDate() + w * 7 + dd)
       const date = ymd(cell)
       const inMonth = cell.getMonth() === tm - 1
       const isAtt = inMonth && attended.has(date)
+      const isAbs = inMonth && !isAtt && absent.has(date)
       if (isAtt) attendedCount++
-      row.push({ date, day: cell.getDate(), inMonth, attended: isAtt, isToday: date === today, future: date > today })
+      if (isAbs) absentCount++
+      row.push({ date, day: cell.getDate(), inMonth, attended: isAtt, absent: isAbs, isToday: date === today, future: date > today })
     }
     weeks.push(row)
   }
@@ -45,6 +49,7 @@ export function AttendanceCalendar({ attendedDates, today, dark }: {
   const sub = dark ? 'text-white/40' : 'text-gray-400'
   const head = dark ? 'text-white/30' : 'text-gray-400'
   const attCls = dark ? 'bg-teal-400/80 text-gray-900 font-semibold' : 'bg-teal-500 text-white font-semibold'
+  const absCls = dark ? 'bg-red-400/70 text-gray-900 font-semibold' : 'bg-red-400 text-white font-semibold'
   const emptyCls = dark ? 'bg-white/5 text-white/40' : 'bg-gray-100 text-gray-500'
   const futureCls = dark ? 'bg-white/[0.02] text-white/20' : 'bg-gray-50 text-gray-300'
   const todayRing = dark ? 'ring-2 ring-teal-300' : 'ring-2 ring-teal-500'
@@ -53,7 +58,7 @@ export function AttendanceCalendar({ attendedDates, today, dark }: {
     <section className={section}>
       <div className="flex items-center justify-between">
         <h3 className={title}>{tm}월 출석</h3>
-        <span className={`text-xs ${sub}`}>{attendedCount}일</span>
+        <span className={`text-xs ${sub}`}>출석 {attendedCount}일{absentCount > 0 && ` · 결석 ${absentCount}일`}</span>
       </div>
       <div className="space-y-1">
         <div className="grid grid-cols-6 gap-1">
@@ -67,6 +72,7 @@ export function AttendanceCalendar({ attendedDates, today, dark }: {
                 className={`aspect-square rounded-md flex items-center justify-center text-[10px] ${
                   !c.inMonth ? 'opacity-0'
                     : c.attended ? attCls
+                    : c.absent ? absCls
                     : c.future ? futureCls
                     : emptyCls
                 } ${c.isToday ? todayRing : ''}`}

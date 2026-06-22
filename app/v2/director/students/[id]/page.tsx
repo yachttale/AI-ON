@@ -79,7 +79,7 @@ export default async function DirectorStudentDetailPage({
       />
 
       {/* 최근 출석 미니 달력 */}
-      <AttendanceCalendar attendedDates={d.attendedDates} today={kstToday()} dark />
+      <AttendanceCalendar attendedDates={d.attendedDates} absentDates={d.absentDates} today={kstToday()} dark />
 
       {/* 통계 + 레이더 */}
       <div className="bg-[#1a1a2e] rounded-2xl border border-white/8 p-5 space-y-4">
