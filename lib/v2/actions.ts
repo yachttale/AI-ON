@@ -432,6 +432,7 @@ export async function createStudent(data: {
   schedule?: string
   phone?: string
   enrolled_on?: string
+  instructor_id?: string
 }): Promise<{ id: string } | { error: string }> {
   const { supabase } = await ctx()
   if (!await isDirector()) return { error: '원장만 학생을 등록할 수 있습니다' }
@@ -443,6 +444,7 @@ export async function createStudent(data: {
     schedule: data.schedule || null,
     phone: data.phone || null,
     enrolled_on: data.enrolled_on || null,
+    instructor_id: data.instructor_id || null,
     is_active: true,
   }).select('id').single()
 
