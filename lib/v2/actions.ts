@@ -178,7 +178,7 @@ export async function setStudentInstructor(studentId: string, instructorId: stri
   await supabase.from('student_day_instructors').delete().eq('student_id', studentId)
   const { error } = await supabase.from('students').update({ instructor_id: instructorId }).eq('id', studentId)
   if (error) throw error
-  for (const p of ['/v2/today', '/v2/students', '/v2/director', '/v2/director/students', `/v2/student/${studentId}`]) revalidatePath(p)
+  for (const p of ['/v2/today', '/v2/students', '/v2/director', '/v2/director/students', '/v2/director/timetable', `/v2/student/${studentId}`, `/v2/director/students/${studentId}`]) revalidatePath(p)
 }
 
 // 반(수업 시간) 변경 — 원장 전용. 예: "월4시,수4시". 빈 값이면 null.
