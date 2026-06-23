@@ -334,29 +334,36 @@ export async function recordMeasureForDate(studentId: string, stepId: string, me
 }
 
 // 계단식 통과: 같은 영법의 ladder_order 이하 ladder 단계를 모두 통과(상위 클릭 → 하위 자동). single/counter/repeatable 제외.
-export async function passLadderCascade(studentId: string, step: { id: string; key: string; ladder_order: number; stroke_key: string }, opts: { measures?: { metric: MetricType; value: number }[] } = {}) {
-  const { supabase, userId } = await ctx(); await assertOwns(supabase, userId, studentId)
-  const sessionId = await ensureSession(supabase, userId, studentId)
-  const { data: version } = await supabase.from('curriculum_versions').select('id').eq('status', 'active').maybeSingle()
-  if (!version) return
-  const { data: stroke } = await supabase.from('strokes').select('id').eq('key', step.stroke_key).maybeSingle()
-  if (!stroke) return
-  const { data: steps } = await supabase.from('skill_steps').select('id,key,ladder_order')
-    .eq('curriculum_version_id', version.id).eq('stroke_id', stroke.id).eq('step_kind', 'ladder')
-    .lte('ladder_order', step.ladder_order)
-  const rows = (steps ?? []).map(s => ({
-    student_id: studentId, skill_step_id: s.id, source: 'observed', instructor_id: userId,
-    source_session_id: sessionId, step_key_snapshot: s.key, ladder_order_snapshot: s.ladder_order,
-  }))
-  if (rows.length) {
-    const { error } = await supabase.from('skill_progress').upsert(rows, { onConflict: 'student_id,skill_step_id', ignoreDuplicates: true })
-    if (error) throw error
+export async function passLadderCascade(studentId: string, step: { id: string; key: string; ladder_order: number; stroke_key: string }, opts: { measures?: { metric: MetricType; value: number }[] } = {}): Promise<{ error?: string }> {
+  try {
+    const { supabase, userId } = await ctx(); await assertOwns(supabase, userId, studentId)
+    const sessionId = await ensureSession(supabase, userId, studentId)
+    const { data: version } = await supabase.from('curriculum_versions').select('id').eq('status', 'active').maybeSingle()
+    if (!version) return { error: '활성 커리큘럼이 없습니다' }
+    const { data: stroke } = await supabase.from('strokes').select('id').eq('key', step.stroke_key).maybeSingle()
+    if (!stroke) return { error: `영법(${step.stroke_key})을 찾을 수 없습니다` }
+    const { data: steps } = await supabase.from('skill_steps').select('id,key,ladder_order')
+      .eq('curriculum_version_id', version.id).eq('stroke_id', stroke.id).eq('step_kind', 'ladder')
+      .lte('ladder_order', step.ladder_order)
+    const rows = (steps ?? []).map(s => ({
+      student_id: studentId, skill_step_id: s.id, source: 'observed', instructor_id: userId,
+      source_session_id: sessionId, step_key_snapshot: s.key, ladder_order_snapshot: s.ladder_order,
+    }))
+    if (rows.length) {
+      const { error } = await supabase.from('skill_progress').upsert(rows, { onConflict: 'student_id,skill_step_id', ignoreDuplicates: true })
+      if (error) throw new Error(`진도 저장 실패: ${error.message}`)
+    }
+    // 클릭한 단계의 측정값(완주 시간·스트로크)만 기록
+    for (const m of opts.measures ?? []) {
+      const { error } = await supabase.from('measurements').insert({ student_id: studentId, metric_type: m.metric, value: m.value, measured_on: today(), session_id: sessionId, skill_step_id: step.id, instructor_id: userId })
+      if (error) throw new Error(`기록 저장 실패: ${error.message}`)
+    }
+    revalidatePath(`/v2/student/${studentId}`); revalidatePath(`/v2/student/${studentId}/progress`)
+    return {}
+  } catch (e) {
+    console.error('passLadderCascade failed', e)
+    return { error: e instanceof Error ? e.message : String(e) }
   }
-  // 클릭한 단계의 측정값(완주 시간·스트로크)만 기록
-  for (const m of opts.measures ?? []) {
-    await supabase.from('measurements').insert({ student_id: studentId, metric_type: m.metric, value: m.value, measured_on: today(), session_id: sessionId, skill_step_id: step.id, instructor_id: userId })
-  }
-  revalidatePath(`/v2/student/${studentId}`); revalidatePath(`/v2/student/${studentId}/progress`)
 }
 
 export async function addAttempt(studentId: string, stepId: string) {

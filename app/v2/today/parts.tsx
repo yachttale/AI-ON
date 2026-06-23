@@ -152,6 +152,7 @@ function Chip({ studentId, chip }: { studentId: string; chip: TodayChip }) {
   const [canUndo, setCanUndo] = useState(chip.passedToday)
   const [open, setOpen] = useState(false)
   const [time, setTime] = useState(''); const [strokes, setStrokes] = useState('')
+  const [err, setErr] = useState('')
 
   const hasMeasure = chip.measure_spec.length > 0
   const fullSnap = { id: chip.id, key: chip.key, ladder_order: chip.ladder_order, stroke_key: chip.stroke_key }
@@ -159,16 +160,22 @@ function Chip({ studentId, chip }: { studentId: string; chip: TodayChip }) {
   const handleClick = () => {
     if (passed || chip.step_kind !== 'ladder') return
     if (hasMeasure) { setOpen(o => !o); return }
-    setPassed(true); setCanUndo(true)
-    start(() => passLadderCascade(studentId, fullSnap))
+    setErr(''); setPassed(true); setCanUndo(true)
+    start(async () => {
+      const r = await passLadderCascade(studentId, fullSnap)
+      if (r?.error) { setPassed(false); setCanUndo(false); setErr(r.error) }
+    })
   }
   const saveMeasure = () => {
     const jobs: { metric: MetricType; value: number }[] = []
     if (chip.measure_spec.includes('time_sec') && time) jobs.push({ metric: 'time_sec', value: Number(time) })
     if (chip.measure_spec.includes('stroke_count') && strokes) jobs.push({ metric: 'stroke_count', value: Number(strokes) })
     if (jobs.length === 0) return
-    setPassed(true); setCanUndo(true); setOpen(false)
-    start(() => passLadderCascade(studentId, fullSnap, { measures: jobs }))
+    setErr(''); setPassed(true); setCanUndo(true); setOpen(false)
+    start(async () => {
+      const r = await passLadderCascade(studentId, fullSnap, { measures: jobs })
+      if (r?.error) { setPassed(false); setCanUndo(false); setErr(r.error) }
+    })
     setTime(''); setStrokes('')
   }
   const doUnpass = () => { setPassed(false); setCanUndo(false); start(() => unpassStep(studentId, chip.id)) }
@@ -202,6 +209,7 @@ function Chip({ studentId, chip }: { studentId: string; chip: TodayChip }) {
           <button disabled={pending} onClick={saveMeasure} className="px-2 py-1 rounded bg-blue-500 text-white text-xs">통과</button>
         </div>
       )}
+      {err && <p className="text-red-500 text-[10px] mt-1 break-all leading-tight">⚠ {err}</p>}
     </div>
   )
 }
