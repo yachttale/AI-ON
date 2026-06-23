@@ -18,10 +18,11 @@ async function assertOwns(supabase: Awaited<ReturnType<typeof createClient>>, us
   if (await getCurrentRole() === 'director') return  // 원장도 수업 — 모든 학생 기록 가능(role 조회는 캐시)
   const { data: s } = await supabase.from('students').select('instructor_id').eq('id', studentId).maybeSingle()
   if (s?.instructor_id === userId) return  // 고정 담당
-  const weekday = kstWeekday()
+  // 요일 배정: 어느 요일이든 이 강사가 이 학생을 담당하면 인정.
+  // (진도 편집/통과는 '오늘 수업일'에 국한되지 않음 — 빠뜨린 기록 보정 등)
   const { data: a } = await supabase.from('student_day_instructors')
-    .select('instructor_id').eq('student_id', studentId).eq('weekday', weekday).maybeSingle()
-  if (a?.instructor_id === userId) return  // 오늘 요일 배정(오버라이드)
+    .select('instructor_id').eq('student_id', studentId).eq('instructor_id', userId).limit(1)
+  if (a && a.length > 0) return
   // 오늘 보강 담당(그날 세션 instructor_id 본인) — 비수업일 학생이라 위 조건엔 안 걸림
   const { data: sess } = await supabase.from('sessions')
     .select('instructor_id').eq('student_id', studentId).eq('session_date', kstToday()).maybeSingle()

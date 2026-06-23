@@ -264,11 +264,13 @@ create policy "측정 조회" on public.measurements for select to authenticated
 create policy "측정 입력" on public.measurements for insert to authenticated with check (
   public.is_director()
   or exists (select 1 from public.students s where s.id = measurements.student_id and s.instructor_id = auth.uid())
+  or exists (select 1 from public.student_day_instructors sdi where sdi.student_id = measurements.student_id and sdi.instructor_id = auth.uid())
   or exists (select 1 from public.sessions se where se.student_id = measurements.student_id
        and se.instructor_id = auth.uid() and se.session_date = (now() at time zone 'Asia/Seoul')::date));
 create policy "측정 삭제" on public.measurements for delete to authenticated using (
   public.is_director()
   or exists (select 1 from public.students s where s.id = measurements.student_id and s.instructor_id = auth.uid())
+  or exists (select 1 from public.student_day_instructors sdi where sdi.student_id = measurements.student_id and sdi.instructor_id = auth.uid())
   or exists (select 1 from public.sessions se where se.student_id = measurements.student_id
        and se.instructor_id = auth.uid() and se.session_date = (now() at time zone 'Asia/Seoul')::date));
 
@@ -278,11 +280,13 @@ create policy "진행 조회" on public.skill_progress for select to authenticat
 create policy "진행 입력" on public.skill_progress for insert to authenticated with check (
   public.is_director()
   or exists (select 1 from public.students s where s.id = skill_progress.student_id and s.instructor_id = auth.uid())
+  or exists (select 1 from public.student_day_instructors sdi where sdi.student_id = skill_progress.student_id and sdi.instructor_id = auth.uid())
   or exists (select 1 from public.sessions se where se.student_id = skill_progress.student_id
        and se.instructor_id = auth.uid() and se.session_date = (now() at time zone 'Asia/Seoul')::date));
 create policy "진행 삭제" on public.skill_progress for delete to authenticated using (
   public.is_director()
   or exists (select 1 from public.students s where s.id = skill_progress.student_id and s.instructor_id = auth.uid())
+  or exists (select 1 from public.student_day_instructors sdi where sdi.student_id = skill_progress.student_id and sdi.instructor_id = auth.uid())
   or exists (select 1 from public.sessions se where se.student_id = skill_progress.student_id
        and se.instructor_id = auth.uid() and se.session_date = (now() at time zone 'Asia/Seoul')::date));
 
