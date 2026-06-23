@@ -214,6 +214,9 @@ alter table public.media enable row level security;
 create policy "프로필 조회" on public.profiles for select to authenticated using (true);
 create policy "프로필 수정" on public.profiles for update to authenticated using (auth.uid() = id);
 create policy "프로필 생성" on public.profiles for insert to authenticated with check (auth.uid() = id);
+-- 권한 상승 차단: 본인 name 만 수정 가능, role/id 변경은 컬럼 권한으로 차단 (026 참조)
+revoke update on public.profiles from authenticated;
+grant update (name) on public.profiles to authenticated;
 
 -- 커리큘럼(읽기: 전원 / 쓰기: 원장)
 create policy "커리큘럼버전 조회" on public.curriculum_versions for select to authenticated using (true);
