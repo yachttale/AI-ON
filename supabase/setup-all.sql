@@ -243,26 +243,45 @@ create policy "템플릿항목 관리" on public.lesson_template_items for all t
 create policy "수업 조회" on public.sessions for select to authenticated using (
   public.is_director() or instructor_id = auth.uid()
   or exists (select 1 from public.students s where s.id = student_id and s.instructor_id = auth.uid()));
+-- 입력/수정/삭제: 미배정(null) 보강 추가·가져가기·취소 허용 (024 참조)
 create policy "수업 입력" on public.sessions for insert to authenticated with check (
-  public.is_director() or instructor_id = auth.uid());
+  public.is_director() or instructor_id = auth.uid() or instructor_id is null);
 create policy "수업 수정" on public.sessions for update to authenticated using (
-  public.is_director() or instructor_id = auth.uid());
+  public.is_director() or instructor_id = auth.uid() or instructor_id is null);
+create policy "수업 삭제" on public.sessions for delete to authenticated using (
+  public.is_director()
+  or instructor_id = auth.uid()
+  or instructor_id is null
+  or exists (select 1 from public.students s where s.id = student_id and s.instructor_id = auth.uid()));
 
 -- measurements
 create policy "측정 조회" on public.measurements for select to authenticated using (
   public.is_director() or exists (select 1 from public.students s where s.id = student_id and s.instructor_id = auth.uid()));
+-- 입력/삭제: 원장·고정담당 외에 '오늘 본인이 강사인 세션이 있는 학생'(요일배정·보강) 허용 (025 참조)
 create policy "측정 입력" on public.measurements for insert to authenticated with check (
-  public.is_director() or exists (select 1 from public.students s where s.id = student_id and s.instructor_id = auth.uid()));
+  public.is_director()
+  or exists (select 1 from public.students s where s.id = measurements.student_id and s.instructor_id = auth.uid())
+  or exists (select 1 from public.sessions se where se.student_id = measurements.student_id
+       and se.instructor_id = auth.uid() and se.session_date = (now() at time zone 'Asia/Seoul')::date));
 create policy "측정 삭제" on public.measurements for delete to authenticated using (
-  public.is_director() or exists (select 1 from public.students s where s.id = student_id and s.instructor_id = auth.uid()));
+  public.is_director()
+  or exists (select 1 from public.students s where s.id = measurements.student_id and s.instructor_id = auth.uid())
+  or exists (select 1 from public.sessions se where se.student_id = measurements.student_id
+       and se.instructor_id = auth.uid() and se.session_date = (now() at time zone 'Asia/Seoul')::date));
 
 -- skill_progress
 create policy "진행 조회" on public.skill_progress for select to authenticated using (
   public.is_director() or exists (select 1 from public.students s where s.id = student_id and s.instructor_id = auth.uid()));
 create policy "진행 입력" on public.skill_progress for insert to authenticated with check (
-  public.is_director() or exists (select 1 from public.students s where s.id = student_id and s.instructor_id = auth.uid()));
+  public.is_director()
+  or exists (select 1 from public.students s where s.id = skill_progress.student_id and s.instructor_id = auth.uid())
+  or exists (select 1 from public.sessions se where se.student_id = skill_progress.student_id
+       and se.instructor_id = auth.uid() and se.session_date = (now() at time zone 'Asia/Seoul')::date));
 create policy "진행 삭제" on public.skill_progress for delete to authenticated using (
-  public.is_director() or exists (select 1 from public.students s where s.id = student_id and s.instructor_id = auth.uid()));
+  public.is_director()
+  or exists (select 1 from public.students s where s.id = skill_progress.student_id and s.instructor_id = auth.uid())
+  or exists (select 1 from public.sessions se where se.student_id = skill_progress.student_id
+       and se.instructor_id = auth.uid() and se.session_date = (now() at time zone 'Asia/Seoul')::date));
 
 -- media
 create policy "영상 조회" on public.media for select to authenticated using (
