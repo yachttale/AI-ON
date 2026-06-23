@@ -7,12 +7,18 @@ import type { SkillStep } from '@/types/v2'
 import type { LadderInputStep } from './ladder'
 
 export function computeCurrentStrokeKey(
-  allSteps: { id: string; step_kind: string; stroke_key: string }[],
+  allSteps: { id: string; step_kind: string; stroke_key: string; ladder_order: number }[],
   passedIds: Set<string>,
 ): string | null {
   if (passedIds.size === 0) return null
   // 기타(etc) 단계는 선택 보너스 — 메인 진행 사다리에서 제외
-  const first = allSteps.find(s => s.step_kind === 'ladder' && s.stroke_key !== 'etc' && !passedIds.has(s.id))
+  const ladder = allSteps.filter(s => s.step_kind === 'ladder' && s.stroke_key !== 'etc')
+  // 종착(가장 마지막 ladder) 단계를 통과했으면 마스터.
+  // 커리큘럼 중간에 단계가 삽입돼도 완주 학생이 강등되지 않도록 종착 통과 여부로 판정.
+  const terminal = ladder.reduce<typeof ladder[number] | null>(
+    (max, s) => (max === null || s.ladder_order > max.ladder_order ? s : max), null)
+  if (terminal && passedIds.has(terminal.id)) return 'master'
+  const first = ladder.find(s => !passedIds.has(s.id))
   if (first) return first.stroke_key
   return 'master'
 }
