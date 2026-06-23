@@ -30,7 +30,7 @@ export function TodayCardItem({ card }: { card: TodayCardView }) {
       <div className={`h-1 w-full ${badge.bar}`} />
       <div className="px-4 pt-3">
         <div className="flex items-start justify-between gap-2">
-          <div className="flex items-center gap-2 flex-wrap">
+          <Link href={`/v2/student/${card.id}`} className="flex items-center gap-2 flex-wrap -my-1 py-1 active:opacity-60">
             <span className="text-xl font-bold text-gray-900">{card.name}</span>
             <span className="text-xs text-gray-500">{card.schedule ?? ''}</span>
             {card.focusStrokeLabel && (
@@ -45,7 +45,7 @@ export function TodayCardItem({ card }: { card: TodayCardView }) {
             {card.recentPassed.length > 0 && (
               <span className="text-xs text-gray-400">· {card.recentPassed.join(' ')}</span>
             )}
-          </div>
+          </Link>
           <Link href={`/v2/student/${card.id}/progress`} className="shrink-0 text-xs text-gray-400 border rounded px-2 py-1">진도→</Link>
         </div>
       </div>
@@ -215,13 +215,13 @@ export function PastDayCardItem({ card, date }: { card: TodayCardView; date: str
       <div className={`h-1 w-full ${badge.bar}`} />
       <div className="px-4 pt-3 pb-1">
         <div className="flex items-start justify-between gap-2">
-          <div className="flex items-center gap-2 flex-wrap">
+          <Link href={`/v2/student/${card.id}`} className="flex items-center gap-2 flex-wrap -my-1 py-1 active:opacity-60">
             <span className="text-xl font-bold text-gray-900">{card.name}</span>
             <span className="text-xs text-gray-500">{card.schedule ?? ''}</span>
             {card.focusStrokeLabel && (
               <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${badge.badge}`}>{card.focusStrokeLabel}</span>
             )}
-          </div>
+          </Link>
           <Link href={`/v2/student/${card.id}/progress`} className="shrink-0 text-xs text-gray-400 border rounded px-2 py-1">진도→</Link>
         </div>
       </div>
