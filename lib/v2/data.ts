@@ -296,7 +296,13 @@ export async function enrichMineCards(cards: TodayCard[]): Promise<TodayCardView
     )
     const lapsMap = masterLapsByStudent.get(c.id) ?? new Map()
     const masterLaps: MasterLapEntry[] = masterSteps.map(s => ({ stepId: s.id, stepKey: s.key, label: s.track_label, laps: lapsMap.get(s.id) ?? 0 }))
-    return buildTodayCardView(c, strokes, recordedTodayBy.get(c.id) ?? new Set(), passedTodayBy.get(c.id) ?? new Set(), undefined, masterLaps)
+    const view = buildTodayCardView(c, strokes, recordedTodayBy.get(c.id) ?? new Set(), passedTodayBy.get(c.id) ?? new Set(), undefined, masterLaps)
+    // 마스터 판정은 학생 상세와 동일하게 computeCurrentStrokeKey로 통일.
+    // (focusStrokeKey는 첫 미통과 단계 기준이라 중간 삽입 시 자유형 등으로 나옴)
+    if (computeCurrentStrokeKey(inputs, passedBy.get(c.id) ?? new Set()) === 'master') {
+      return { ...view, focusStrokeKey: 'master', focusStrokeLabel: '마스터' }
+    }
+    return view
   })
 }
 
