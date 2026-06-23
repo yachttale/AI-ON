@@ -454,6 +454,28 @@ export async function unpassStep(studentId: string, stepId: string) {
   revalidatePath('/v2/today'); revalidatePath(`/v2/student/${studentId}`)
 }
 
+// 오늘 해당 step의 바퀴수를 목표값으로 맞춤 (디바운스 자동저장용).
+// 클릭마다 저장하지 않고 멈춘 뒤 최종값만 1회 반영 → 연타 시 로딩 없음.
+// value=1 행을 laps개로 재구성해 행 수 카운트(오늘 카드)·SUM(value)(상세) 양쪽과 정합.
+export async function setTodayLaps(studentId: string, stepId: string, laps: number) {
+  const { supabase, userId } = await ctx(); await assertOwns(supabase, userId, studentId)
+  const day = today()
+  await supabase.from('measurements').delete()
+    .eq('student_id', studentId).eq('skill_step_id', stepId)
+    .eq('metric_type', 'laps').eq('measured_on', day)
+  const n = Math.max(0, Math.floor(laps))
+  if (n > 0) {
+    const sessionId = await ensureSession(supabase, userId, studentId)
+    const rows = Array.from({ length: n }, () => ({
+      student_id: studentId, metric_type: 'laps' as MetricType, value: 1, measured_on: day,
+      session_id: sessionId, skill_step_id: stepId, instructor_id: userId,
+    }))
+    const { error } = await supabase.from('measurements').insert(rows)
+    if (error) throw error
+  }
+  revalidatePath('/v2/today'); revalidatePath(`/v2/student/${studentId}`)
+}
+
 // 오늘 해당 step의 laps 측정 최신 1행 삭제 (잘못 누른 경우 취소용)
 export async function removeLastLap(studentId: string, stepId: string) {
   const { supabase, userId } = await ctx(); await assertOwns(supabase, userId, studentId)

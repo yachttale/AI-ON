@@ -1,81 +1,57 @@
 'use client'
-import { useOptimistic, useTransition } from 'react'
-import { logRepeatable, removeLastLap } from '@/lib/v2/actions'
+import { useState, useRef, useEffect } from 'react'
+import { setTodayLaps } from '@/lib/v2/actions'
 import type { StudentMasterStats, MasterStrokeStats } from '@/lib/v2/data'
 
 export function MasterPanel({ studentId, stats }: { studentId: string; stats: StudentMasterStats }) {
-  const [pending, start] = useTransition()
-
-  // 낙관적 오늘 바퀴 수 (stepId → delta)
-  const [optimistic, addOptimistic] = useOptimistic(
-    Object.fromEntries(stats.strokes.map(s => [s.stepId, s.todayLaps])),
-    (state: Record<string, number>, { stepId, delta }: { stepId: string; delta: number }) => ({
-      ...state,
-      [stepId]: Math.max(0, (state[stepId] ?? 0) + delta),
-    }),
-  )
-
-  const plusLap = (s: MasterStrokeStats) => {
-    addOptimistic({ stepId: s.stepId, delta: 1 })
-    start(() => logRepeatable(studentId, s.stepId, 'laps', 1))
-  }
-  const minusLap = (s: MasterStrokeStats) => {
-    addOptimistic({ stepId: s.stepId, delta: -1 })
-    start(() => removeLastLap(studentId, s.stepId))
-  }
-
   const swim = stats.strokes.filter(s => s.strokeKey !== 'im')
   const im = stats.strokes.find(s => s.strokeKey === 'im')
 
   return (
     <div className="space-y-3">
       <h2 className="text-base font-bold text-gray-700">마스터 오늘 기록</h2>
+      {swim.map(s => <StrokeRow key={s.stepId} studentId={studentId} s={s} />)}
+      {im && <StrokeRow studentId={studentId} s={im} isIM />}
+    </div>
+  )
+}
 
-      {swim.map(s => (
-        <div key={s.stepId} className="bg-white rounded-xl border px-4 py-3 flex items-center gap-3">
-          <span className="w-14 text-sm font-semibold text-gray-800">{s.strokeLabel}</span>
-          <div className="flex items-center gap-2">
-            <button
-              disabled={pending || optimistic[s.stepId] <= 0}
-              onClick={() => minusLap(s)}
-              className="w-9 h-9 rounded-full bg-gray-100 text-xl font-bold text-gray-600 disabled:opacity-30"
-            >−</button>
-            <span className="w-10 text-center text-xl font-bold tabular-nums">{optimistic[s.stepId]}</span>
-            <button
-              disabled={pending}
-              onClick={() => plusLap(s)}
-              className="w-9 h-9 rounded-full bg-sky-500 text-white text-xl font-bold"
-            >+</button>
-          </div>
-          <div className="ml-auto text-right">
-            <p className="text-xs text-gray-400">누적</p>
-            <p className="text-sm font-semibold text-gray-700">{(s.totalDistanceM + (optimistic[s.stepId] - s.todayLaps) * 50).toLocaleString()}m</p>
-          </div>
-        </div>
-      ))}
+// 멈춘 뒤 0.8초 후 최종값만 1회 저장 (연타 시 로딩 없음). 언마운트 시 즉시 flush.
+function StrokeRow({ studentId, s, isIM }: { studentId: string; s: MasterStrokeStats; isIM?: boolean }) {
+  const [laps, setLaps] = useState(s.todayLaps)
+  const latest = useRef(s.todayLaps)
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-      {im && (
-        <div className="bg-white rounded-xl border px-4 py-3 flex items-center gap-3">
-          <span className="w-14 text-sm font-semibold text-gray-800">IM</span>
-          <div className="flex items-center gap-2">
-            <button
-              disabled={pending || optimistic[im.stepId] <= 0}
-              onClick={() => minusLap(im)}
-              className="w-9 h-9 rounded-full bg-gray-100 text-xl font-bold text-gray-600 disabled:opacity-30"
-            >−</button>
-            <span className="w-10 text-center text-xl font-bold tabular-nums">{optimistic[im.stepId]}</span>
-            <button
-              disabled={pending}
-              onClick={() => plusLap(im)}
-              className="w-9 h-9 rounded-full bg-purple-500 text-white text-xl font-bold"
-            >+</button>
-          </div>
-          <div className="ml-auto text-right">
-            <p className="text-xs text-gray-400">총 기록</p>
-            <p className="text-sm font-semibold text-gray-700">{im.totalLaps}회</p>
-          </div>
-        </div>
-      )}
+  const schedule = (n: number) => {
+    latest.current = n; setLaps(n)
+    if (timer.current) clearTimeout(timer.current)
+    timer.current = setTimeout(() => { timer.current = null; setTodayLaps(studentId, s.stepId, n) }, 800)
+  }
+  const inc = () => schedule(latest.current + 1)
+  const dec = () => { if (latest.current > 0) schedule(latest.current - 1) }
+  useEffect(() => () => {
+    if (timer.current) { clearTimeout(timer.current); setTodayLaps(studentId, s.stepId, latest.current) }
+  }, [studentId, s.stepId])
+
+  const delta = laps - s.todayLaps // 미저장분도 화면 누적에 즉시 반영
+  return (
+    <div className="bg-white rounded-xl border px-4 py-3 flex items-center gap-3">
+      <span className="w-14 text-sm font-semibold text-gray-800">{isIM ? 'IM' : s.strokeLabel}</span>
+      <div className="flex items-center gap-2">
+        <button disabled={laps <= 0} onClick={dec}
+          className="w-9 h-9 rounded-full bg-gray-100 text-xl font-bold text-gray-600 disabled:opacity-30">−</button>
+        <span className="w-10 text-center text-xl font-bold tabular-nums">{laps}</span>
+        <button onClick={inc}
+          className={`w-9 h-9 rounded-full text-white text-xl font-bold active:scale-95 transition-transform ${isIM ? 'bg-purple-500' : 'bg-sky-500'}`}>+</button>
+      </div>
+      <div className="ml-auto text-right">
+        <p className="text-xs text-gray-400">{isIM ? '총 기록' : '누적'}</p>
+        <p className="text-sm font-semibold text-gray-700">
+          {isIM
+            ? `${s.totalLaps + delta}회`
+            : `${(s.totalDistanceM + delta * 50).toLocaleString()}m`}
+        </p>
+      </div>
     </div>
   )
 }

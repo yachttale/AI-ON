@@ -1,8 +1,8 @@
 // app/v2/today/parts.tsx — 오늘 수업 카드(실시간 기록) 클라이언트 섬
 'use client'
-import { useState, useTransition } from 'react'
+import { useState, useTransition, useRef, useEffect } from 'react'
 import Link from 'next/link'
-import { passLadderCascade, markAbsent, passStepAction, assignToMe, confirmSession, acceptReportedStep, markAbsentForDate, recordStepForDate, recordMeasureForDate, unpassStep, logRepeatable, removeLastLap } from '@/lib/v2/actions'
+import { passLadderCascade, markAbsent, passStepAction, assignToMe, confirmSession, acceptReportedStep, markAbsentForDate, recordStepForDate, recordMeasureForDate, unpassStep, setTodayLaps } from '@/lib/v2/actions'
 import { strokeBadge } from '@/lib/v2/stroke-colors'
 import type { MetricType } from '@/types/v2'
 import type { TodayCard, TodayCardView, TodayChip, MasterLapEntry } from '@/lib/v2/today'
@@ -116,25 +116,32 @@ export function TodayCardItem({ card }: { card: TodayCardView }) {
 }
 
 function MasterLapCounter({ studentId, entry }: { studentId: string; entry: MasterLapEntry }) {
-  const [pending, start] = useTransition()
   const [laps, setLaps] = useState(entry.laps)
+  const latest = useRef(entry.laps)
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const inc = () => { setLaps(l => l + 1); start(() => logRepeatable(studentId, entry.stepId, 'laps', 1)) }
-  const dec = () => {
-    if (laps <= 0) return
-    setLaps(l => l - 1); start(() => removeLastLap(studentId, entry.stepId))
+  // 멈춘 뒤 0.8초 후 최종값만 1회 저장 (연타 시 로딩 없음). 언마운트 시 즉시 flush.
+  const schedule = (n: number) => {
+    latest.current = n; setLaps(n)
+    if (timer.current) clearTimeout(timer.current)
+    timer.current = setTimeout(() => { timer.current = null; setTodayLaps(studentId, entry.stepId, n) }, 800)
   }
+  const inc = () => schedule(latest.current + 1)
+  const dec = () => { if (latest.current > 0) schedule(latest.current - 1) }
+  useEffect(() => () => {
+    if (timer.current) { clearTimeout(timer.current); setTodayLaps(studentId, entry.stepId, latest.current) }
+  }, [studentId, entry.stepId])
 
   return (
     <div className="flex items-center gap-3 px-2 py-2 bg-white rounded-lg border">
-      <button disabled={pending || laps <= 0} onClick={dec}
+      <button disabled={laps <= 0} onClick={dec}
         className="w-9 h-9 rounded-full bg-gray-100 text-gray-500 text-xl font-bold flex items-center justify-center disabled:opacity-30 shrink-0">−</button>
       <div className="flex-1 flex items-center justify-between">
         <span className="text-sm font-semibold text-gray-700">{entry.label}</span>
         <span className="text-xl font-bold text-gray-900 tabular-nums">{laps}<span className="text-sm font-normal text-gray-400 ml-0.5">바퀴</span></span>
       </div>
-      <button disabled={pending} onClick={inc}
-        className="w-9 h-9 rounded-full bg-blue-500 text-white text-xl font-bold flex items-center justify-center disabled:opacity-50 shrink-0">+</button>
+      <button onClick={inc}
+        className="w-9 h-9 rounded-full bg-blue-500 text-white text-xl font-bold flex items-center justify-center shrink-0 active:scale-95 transition-transform">+</button>
     </div>
   )
 }
