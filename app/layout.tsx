@@ -5,13 +5,13 @@ import './globals.css'
 const geist = Geist({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
-  title: '스타키즈 수영',
-  description: '스타키즈 수영 진도 관리 시스템',
+  title: 'UP²U 어푸',
+  description: 'UP²U 어푸 — 수영 진도관리 프로그램',
   manifest: '/manifest.webmanifest',
   appleWebApp: {
     capable: true,
     statusBarStyle: 'default',
-    title: '스타키즈',
+    title: 'UP²U',
   },
 }
 

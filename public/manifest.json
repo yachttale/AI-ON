@@ -1,7 +1,7 @@
 {
-  "name": "스타키즈 수영 진도 관리",
-  "short_name": "스타키즈",
-  "description": "스타키즈 수영 진도 관리 시스템",
+  "name": "UP²U 어푸 — 수영 진도관리",
+  "short_name": "UP²U",
+  "description": "UP²U 어푸 — 수영 진도관리 프로그램",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#f0f9ff",

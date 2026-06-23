@@ -30,8 +30,9 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-sky-50 px-4">
       <div className="w-full max-w-sm bg-white rounded-2xl shadow-md p-8">
-        <h1 className="text-2xl font-bold text-center text-sky-600 mb-2">스타키즈 수영</h1>
-        <p className="text-center text-gray-400 text-sm mb-8">진도 관리 시스템</p>
+        <h1 className="text-3xl font-bold text-center text-sky-600 leading-none">UP<sup className="text-lg">2</sup>U</h1>
+        <p className="text-center text-sky-400 text-xs font-medium mt-1">어푸</p>
+        <p className="text-center text-gray-400 text-sm mb-8 mt-2">수영 진도관리 프로그램</p>
 
         <form onSubmit={handleLogin} className="space-y-4">
           <div>
