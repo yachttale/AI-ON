@@ -336,8 +336,11 @@ export async function recordMeasureForDate(studentId: string, stepId: string, me
 
 // 계단식 통과: 같은 영법의 ladder_order 이하 ladder 단계를 모두 통과(상위 클릭 → 하위 자동). single/counter/repeatable 제외.
 export async function passLadderCascade(studentId: string, step: { id: string; key: string; ladder_order: number; stroke_key: string }, opts: { measures?: { metric: MetricType; value: number }[] } = {}): Promise<{ error?: string }> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let dbgSupabase: any = null; let dbgUserId = ''
   try {
     const { supabase, userId } = await ctx(); await assertOwns(supabase, userId, studentId)
+    dbgSupabase = supabase; dbgUserId = userId
     const sessionId = await ensureSession(supabase, userId, studentId)
     const { data: version } = await supabase.from('curriculum_versions').select('id').eq('status', 'active').maybeSingle()
     if (!version) return { error: '활성 커리큘럼이 없습니다' }
@@ -363,7 +366,16 @@ export async function passLadderCascade(studentId: string, step: { id: string; k
     return {}
   } catch (e) {
     console.error('passLadderCascade failed', e)
-    return { error: e instanceof Error ? e.message : String(e) }
+    const msg = e instanceof Error ? e.message : String(e)
+    // 진단: DB가 실제로 보는 auth.uid() 와 앱이 아는 userId 비교
+    let dbg = ''
+    if (dbgSupabase) {
+      try {
+        const { data: who } = await dbgSupabase.rpc('debug_whoami')
+        dbg = ` [auth.uid=${who ?? 'NULL'} / userId=${dbgUserId}]`
+      } catch { /* RPC 미생성 시 무시 */ }
+    }
+    return { error: msg + dbg }
   }
 }
 
