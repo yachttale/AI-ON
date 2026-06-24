@@ -6,6 +6,7 @@ import { usePathname } from 'next/navigation'
 const TABS = [
   { href: '/v2/today', label: '오늘 수업' },
   { href: '/v2/students', label: '나의 학생' },
+  { href: '/v2/me', label: '나의 정보' },
 ]
 
 export default function V2Nav({ isDirector = false }: { isDirector?: boolean }) {

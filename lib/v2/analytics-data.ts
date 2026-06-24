@@ -731,3 +731,110 @@ export async function getWeeklyTimetable(): Promise<TimetableMap> {
   }
   return result
 }
+
+// ── 강사 '나의 정보' 포트폴리오 ───────────────────────────────────────────────
+// 지도 효율: 한 영법을 첫 통과 ~ 마지막 통과까지 학생이 출석한 수업 수의 평균.
+// 대상은 '내가 통과를 기록한(=실제 가르친)' 학생. 출석 수업 수 = 결석 제외 세션.
+export interface StrokeEfficiency { strokeKey: string; strokeLabel: string; avgSessions: number | null; sampleSize: number }
+export interface PortfolioDist { key: string; label: string; count: number }
+export interface MyPortfolio {
+  taughtStudents: number            // 현재 담당(활성) 학생 수
+  masterCount: number               // 내가 가르친 학생 중 마스터 도달 수
+  fullJourneyAvg: number | null     // 입문~현재(수료/퇴원) 평균 출석 수업 수
+  fullJourneySample: number
+  strokes: StrokeEfficiency[]       // 영법별 완성 평균 출석 수업 수
+  distribution: PortfolioDist[]     // 영법별 담당 학생 분포(현재 영법)
+  certifications: { id: string; name: string; acquiredOn: string | null }[]
+}
+
+const PORTFOLIO_STROKES = [
+  { key: 'freestyle', label: '자유형' },
+  { key: 'backstroke', label: '배영' },
+  { key: 'breaststroke', label: '평영' },
+  { key: 'butterfly', label: '접영' },
+]
+const DIST_LABELS: Record<string, string> = { beginner: '초보', freestyle: '자유형', backstroke: '배영', breaststroke: '평영', butterfly: '접영', master: '마스터' }
+const DIST_ORDER = ['beginner', 'freestyle', 'backstroke', 'breaststroke', 'butterfly', 'master']
+
+export async function getMyPortfolio(instructorId: string): Promise<MyPortfolio> {
+  const supabase = await createClient()
+  const inputs = await getCachedLadderSteps()
+
+  const { data: certs } = await supabase.from('instructor_certifications')
+    .select('id,name,acquired_on').eq('instructor_id', instructorId).order('acquired_on', { ascending: false, nullsFirst: false })
+  const certifications = (certs ?? []).map(c => ({ id: c.id as string, name: c.name as string, acquiredOn: (c.acquired_on as string | null) ?? null }))
+
+  const { data: myProg } = await supabase.from('skill_progress')
+    .select('student_id').eq('instructor_id', instructorId).eq('source', 'observed')
+  const studentIds = [...new Set((myProg ?? []).map(p => p.student_id))]
+  const empty: MyPortfolio = { taughtStudents: 0, masterCount: 0, fullJourneyAvg: null, fullJourneySample: 0, strokes: [], distribution: [], certifications }
+  if (studentIds.length === 0) return empty
+
+  const [{ data: prog }, { data: sess }, { data: stu }] = await Promise.all([
+    supabase.from('skill_progress').select('student_id,skill_step_id,passed_at').in('student_id', studentIds).eq('source', 'observed'),
+    supabase.from('sessions').select('student_id,session_date,attendance').in('student_id', studentIds),
+    supabase.from('students').select('id,is_active').in('id', studentIds),
+  ])
+
+  // 영법별 첫/마지막 ladder 단계
+  const ladder = inputs.filter(s => s.step_kind === 'ladder' && s.stroke_key !== 'etc')
+  const firstStep: Record<string, { id: string; order: number }> = {}
+  const lastStep: Record<string, { id: string; order: number }> = {}
+  for (const s of ladder) {
+    const k = s.stroke_key
+    if (!firstStep[k] || s.ladder_order < firstStep[k].order) firstStep[k] = { id: s.id, order: s.ladder_order }
+    if (!lastStep[k] || s.ladder_order > lastStep[k].order) lastStep[k] = { id: s.id, order: s.ladder_order }
+  }
+
+  const passedAt = new Map<string, Map<string, string>>()
+  const passedSteps = new Map<string, Set<string>>()
+  for (const p of prog ?? []) {
+    if (!passedAt.has(p.student_id)) { passedAt.set(p.student_id, new Map()); passedSteps.set(p.student_id, new Set()) }
+    if (p.passed_at) passedAt.get(p.student_id)!.set(p.skill_step_id, p.passed_at)
+    passedSteps.get(p.student_id)!.add(p.skill_step_id)
+  }
+  const attendByStudent = new Map<string, string[]>()
+  for (const s of sess ?? []) {
+    if (s.attendance === '결석') continue
+    ;(attendByStudent.get(s.student_id) ?? attendByStudent.set(s.student_id, []).get(s.student_id)!).push(s.session_date)
+  }
+  for (const arr of attendByStudent.values()) arr.sort()
+  const countAttend = (sid: string, start: string | null, end: string | null) => {
+    const arr = attendByStudent.get(sid) ?? []
+    return arr.filter(d => (!start || d >= start) && (!end || d <= end)).length
+  }
+
+  const strokes: StrokeEfficiency[] = PORTFOLIO_STROKES.map(({ key, label }) => {
+    const fs = firstStep[key], ls = lastStep[key]
+    if (!fs || !ls) return { strokeKey: key, strokeLabel: label, avgSessions: null, sampleSize: 0 }
+    const samples: number[] = []
+    for (const sid of studentIds) {
+      const pa = passedAt.get(sid); if (!pa) continue
+      const endDate = pa.get(ls.id); if (!endDate) continue        // 그 영법 완성 안 함 → 제외
+      const startDate = pa.get(fs.id) ?? endDate
+      samples.push(countAttend(sid, startDate, endDate))
+    }
+    const avg = samples.length ? Math.round(samples.reduce((a, b) => a + b, 0) / samples.length) : null
+    return { strokeKey: key, strokeLabel: label, avgSessions: avg, sampleSize: samples.length }
+  })
+
+  const journeySamples: number[] = []
+  for (const sid of studentIds) {
+    const total = countAttend(sid, null, null)
+    if (total > 0) journeySamples.push(total)
+  }
+  const fullJourneyAvg = journeySamples.length ? Math.round(journeySamples.reduce((a, b) => a + b, 0) / journeySamples.length) : null
+
+  const stuMap = new Map((stu ?? []).map(s => [s.id, s]))
+  const dist = new Map<string, number>()
+  let masterCount = 0, activeCount = 0
+  for (const sid of studentIds) {
+    if (stuMap.get(sid)?.is_active) activeCount++
+    const cur = computeCurrentStrokeKey(inputs, passedSteps.get(sid) ?? new Set())
+    if (cur === 'master') masterCount++
+    if (cur) dist.set(cur, (dist.get(cur) ?? 0) + 1)
+  }
+  const distribution = DIST_ORDER.filter(k => dist.has(k)).map(k => ({ key: k, label: DIST_LABELS[k] ?? k, count: dist.get(k)! }))
+
+  return { taughtStudents: activeCount, masterCount, fullJourneyAvg, fullJourneySample: journeySamples.length, strokes, distribution, certifications }
+}

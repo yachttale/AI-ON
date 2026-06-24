@@ -507,6 +507,26 @@ export async function removeLastLap(studentId: string, stepId: string) {
   revalidatePath('/v2/today'); revalidatePath(`/v2/student/${studentId}`)
 }
 
+// 강사 자격증 추가(본인) — 나의 정보 포트폴리오
+export async function addCertification(name: string, acquiredOn: string | null) {
+  const trimmed = name.trim()
+  if (!trimmed) return
+  const { supabase, userId } = await ctx()
+  const { error } = await supabase.from('instructor_certifications')
+    .insert({ instructor_id: userId, name: trimmed, acquired_on: acquiredOn || null })
+  if (error) throw error
+  revalidatePath('/v2/me')
+}
+
+// 강사 자격증 삭제(본인)
+export async function removeCertification(id: string) {
+  const { supabase, userId } = await ctx()
+  const { error } = await supabase.from('instructor_certifications')
+    .delete().eq('id', id).eq('instructor_id', userId)
+  if (error) throw error
+  revalidatePath('/v2/me')
+}
+
 // 원장 전용: 신규 학생 등록
 export async function createStudent(data: {
   name: string

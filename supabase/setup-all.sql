@@ -567,3 +567,20 @@ drop policy if exists "학생 수정" on public.students;
 create policy "학생 수정" on public.students for update to authenticated using (
   public.is_director() or instructor_id = auth.uid()
   or exists (select 1 from public.student_day_instructors sdi where sdi.student_id = students.id and sdi.instructor_id = auth.uid()));
+
+-- 강사 자격증(포트폴리오) — 032 참조
+create table if not exists public.instructor_certifications (
+  id uuid primary key default gen_random_uuid(),
+  instructor_id uuid not null references public.profiles(id) on delete cascade,
+  name text not null,
+  acquired_on date,
+  created_at timestamptz default now() not null
+);
+create index if not exists idx_inst_cert on public.instructor_certifications(instructor_id);
+alter table public.instructor_certifications enable row level security;
+create policy "자격증 조회" on public.instructor_certifications for select to authenticated
+  using (instructor_id = auth.uid() or public.is_director());
+create policy "자격증 입력" on public.instructor_certifications for insert to authenticated
+  with check (instructor_id = auth.uid());
+create policy "자격증 삭제" on public.instructor_certifications for delete to authenticated
+  using (instructor_id = auth.uid());
