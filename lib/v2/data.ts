@@ -2,7 +2,7 @@
 // 커리큘럼 캐시는 ./curriculum-data, 원장 대시보드·통계·리포트는 ./analytics-data 로 분리.
 import { cache } from 'react'
 import { createClient } from '@/lib/supabase/server'
-import type { SkillStep, SkillProgress, Measurement, ProgressSource, Attendance } from '@/types/v2'
+import type { SkillStep, SkillProgress, Measurement, ProgressSource, Attendance, MetricType } from '@/types/v2'
 import type { TodayStudent, TodaySession, TodayCard, TodayCardView, MasterLapEntry } from './today'
 import { buildTodayCardView } from './today'
 import { buildStrokeLadders, type StrokeLadderView } from './ladder'
@@ -137,6 +137,52 @@ export async function getStrokeLadders(studentId: string): Promise<StrokeLadderV
   const attemptById = new Map<string, number>()
   for (const a of att ?? []) if (a.skill_step_id) attemptById.set(a.skill_step_id, (attemptById.get(a.skill_step_id) ?? 0) + 1)
   return buildStrokeLadders(steps, passedIds, sourceById, attemptById)
+}
+
+// 기록 성장: 측정(time_sec·stroke_count) 단계별 측정값 시계열. 완주 후 재측정이 쌓일수록 추이가 보임.
+export interface GrowthPoint { date: string; value: number }
+export interface GrowthSeries {
+  stepId: string; stepLabel: string; strokeLabel: string; color: string | null
+  metric: MetricType; unit: string; lowerIsBetter: boolean
+  points: GrowthPoint[]; best: number; latest: number
+}
+export async function getStudentGrowth(studentId: string): Promise<GrowthSeries[]> {
+  const supabase = await createClient()
+  const steps = await getCachedLadderSteps()
+  const measureSteps = steps.filter(s => (s.measure_spec ?? []).some(m => m === 'time_sec' || m === 'stroke_count'))
+  if (measureSteps.length === 0) return []
+  const stepIds = measureSteps.map(s => s.id)
+  const { data } = await supabase.from('measurements')
+    .select('skill_step_id,metric_type,value,measured_on')
+    .eq('student_id', studentId)
+    .in('skill_step_id', stepIds)
+    .in('metric_type', ['time_sec', 'stroke_count'])
+    .order('measured_on', { ascending: true })
+  // (step, metric)별 시계열 그룹
+  const byKey = new Map<string, GrowthPoint[]>()
+  for (const m of data ?? []) {
+    if (!m.skill_step_id) continue
+    const k = `${m.skill_step_id}|${m.metric_type}`
+    ;(byKey.get(k) ?? byKey.set(k, []).get(k)!).push({ date: m.measured_on, value: Number(m.value) })
+  }
+  // measureSteps 는 ladder_order 순 → 영법·단계 순서대로 시리즈 생성
+  const series: GrowthSeries[] = []
+  for (const step of measureSteps) {
+    for (const metric of step.measure_spec) {
+      if (metric !== 'time_sec' && metric !== 'stroke_count') continue
+      const points = byKey.get(`${step.id}|${metric}`)
+      if (!points || points.length === 0) continue
+      const values = points.map(p => p.value)
+      const lowerIsBetter = metric === 'time_sec'
+      series.push({
+        stepId: step.id, stepLabel: step.label, strokeLabel: step.stroke_label, color: step.color ?? null,
+        metric: metric as MetricType, unit: metric === 'time_sec' ? '초' : '회', lowerIsBetter, points,
+        best: lowerIsBetter ? Math.min(...values) : Math.max(...values),
+        latest: values[values.length - 1],
+      })
+    }
+  }
+  return series
 }
 
 // 키오스크: 강사 담당 활성 학생 + 오늘 입력 완료(session 존재) 여부

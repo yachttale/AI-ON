@@ -2,12 +2,13 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { getCurrentRole } from '@/lib/v2/session'
-import { getStudentDashboard, getInstructors, getStudentMasterStats, computeCurrentStrokeKey, getCachedLadderSteps, getStudentPassedStepIds } from '@/lib/v2/data'
+import { getStudentDashboard, getInstructors, getStudentMasterStats, computeCurrentStrokeKey, getCachedLadderSteps, getStudentPassedStepIds, getStudentGrowth } from '@/lib/v2/data'
 import { relDayLabel, kstToday } from '@/lib/v2/now'
 import { StrokeRadar } from './StrokeRadar'
 import { FeedbackDraft } from './FeedbackDraft'
 import { StudentManage } from './StudentManage'
 import { MasterPanel } from './MasterPanel'
+import { GrowthChart } from './GrowthChart'
 import { AttendanceCalendar } from './AttendanceCalendar'
 
 const KIND_STYLE: Record<string, string> = {
@@ -24,10 +25,11 @@ export default async function StudentDashboardPage({ params }: { params: Promise
   const isDirector = (await getCurrentRole()) === 'director'
   const instructors = isDirector ? await getInstructors() : []
 
-  // 마스터 여부 판단
-  const [allSteps, passedIds] = await Promise.all([
+  // 마스터 여부 판단 + 기록 성장
+  const [allSteps, passedIds, growth] = await Promise.all([
     getCachedLadderSteps(),
     getStudentPassedStepIds(id),
+    getStudentGrowth(id),
   ])
   const currentStrokeKey = computeCurrentStrokeKey(allSteps, passedIds)
   const isMaster = currentStrokeKey === 'master'
@@ -80,6 +82,27 @@ export default async function StudentDashboardPage({ params }: { params: Promise
             {km >= 1 && <p className="text-[11px] text-gray-300 text-center">누적 {km.toLocaleString(undefined, { maximumFractionDigits: 1 })}km</p>}
           </section>
         )}
+
+      {/* 기록 성장 — 측정 단계 기록 추이 */}
+      {growth.length > 0 && (
+        <section className="bg-white rounded-2xl border p-4 space-y-4">
+          <h3 className="font-bold text-sm text-gray-700">기록 성장</h3>
+          {growth.map(g => (
+            <div key={`${g.stepId}-${g.metric}`} className="space-y-1">
+              <div className="flex items-baseline justify-between gap-2">
+                <span className="text-xs font-medium text-gray-700">{g.strokeLabel} · {g.stepLabel}</span>
+                <span className="text-[11px] text-gray-400">
+                  최고 <span className="text-gray-700 font-semibold">{g.best}{g.unit}</span> · 최근 {g.latest}{g.unit}
+                </span>
+              </div>
+              {g.points.length >= 2
+                ? <GrowthChart points={g.points} lowerIsBetter={g.lowerIsBetter} color={g.color ?? '#6366f1'} />
+                : <p className="text-[11px] text-gray-400">{g.latest}{g.unit} · 기록 1회 — 다음 측정부터 추이가 표시됩니다</p>}
+            </div>
+          ))}
+          <p className="text-[11px] text-gray-300">선이 위로 갈수록 더 좋은 기록입니다</p>
+        </section>
+      )}
 
       {/* 부모 피드백 초안 */}
       <section className="bg-white rounded-2xl border p-4 space-y-2">
