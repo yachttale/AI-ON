@@ -79,11 +79,11 @@
 
   @media print {
     body { font-size: 12pt; }
-    .page { padding: 0; max-width: 100%; }
-    h2 { page-break-after: avoid; }
-    .step, .tip, .qbox, .feedback, .phone, .mock { page-break-inside: avoid; }
-    .section { page-break-before: always; }
-    .cover { page-break-after: always; }
+    .page { padding: 0 14px; max-width: 100%; }
+    /* 섹션 강제 페이지 분할 제거 — 내용이 끊기지 않고 연속으로 흐르게.
+       카드·목업 등 한 덩어리만 페이지 경계에서 잘리지 않도록 보호. */
+    h2 { break-after: avoid; }
+    .step, .tip, .qbox, .feedback, .phone, .mock, .toc { break-inside: avoid; }
     a { color: inherit; text-decoration: none; }
   }
 </style>
