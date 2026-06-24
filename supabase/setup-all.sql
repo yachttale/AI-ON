@@ -259,7 +259,11 @@ create policy "수업 삭제" on public.sessions for delete to authenticated usi
 
 -- measurements
 create policy "측정 조회" on public.measurements for select to authenticated using (
-  public.is_director() or exists (select 1 from public.students s where s.id = student_id and s.instructor_id = auth.uid()));
+  public.is_director()
+  or exists (select 1 from public.students s where s.id = measurements.student_id and s.instructor_id = auth.uid())
+  or exists (select 1 from public.student_day_instructors sdi where sdi.student_id = measurements.student_id and sdi.instructor_id = auth.uid())
+  or exists (select 1 from public.sessions se where se.student_id = measurements.student_id
+       and se.instructor_id = auth.uid() and se.session_date = (now() at time zone 'Asia/Seoul')::date));
 -- 입력/삭제: 원장·고정담당 외에 '오늘 본인이 강사인 세션이 있는 학생'(요일배정·보강) 허용 (025 참조)
 create policy "측정 입력" on public.measurements for insert to authenticated with check (
   public.is_director()
@@ -276,7 +280,11 @@ create policy "측정 삭제" on public.measurements for delete to authenticated
 
 -- skill_progress
 create policy "진행 조회" on public.skill_progress for select to authenticated using (
-  public.is_director() or exists (select 1 from public.students s where s.id = student_id and s.instructor_id = auth.uid()));
+  public.is_director()
+  or exists (select 1 from public.students s where s.id = skill_progress.student_id and s.instructor_id = auth.uid())
+  or exists (select 1 from public.student_day_instructors sdi where sdi.student_id = skill_progress.student_id and sdi.instructor_id = auth.uid())
+  or exists (select 1 from public.sessions se where se.student_id = skill_progress.student_id
+       and se.instructor_id = auth.uid() and se.session_date = (now() at time zone 'Asia/Seoul')::date));
 create policy "진행 입력" on public.skill_progress for insert to authenticated with check (
   public.is_director()
   or exists (select 1 from public.students s where s.id = skill_progress.student_id and s.instructor_id = auth.uid())
