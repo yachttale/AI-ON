@@ -289,6 +289,20 @@ create policy "진행 삭제" on public.skill_progress for delete to authenticat
   or exists (select 1 from public.student_day_instructors sdi where sdi.student_id = skill_progress.student_id and sdi.instructor_id = auth.uid())
   or exists (select 1 from public.sessions se where se.student_id = skill_progress.student_id
        and se.instructor_id = auth.uid() and se.session_date = (now() at time zone 'Asia/Seoul')::date));
+-- upsert(ON CONFLICT) 가 UPDATE 경로를 타도 통과하도록 UPDATE 정책 추가 (029 참조)
+create policy "진행 수정" on public.skill_progress for update to authenticated
+using (
+  public.is_director()
+  or exists (select 1 from public.students s where s.id = skill_progress.student_id and s.instructor_id = auth.uid())
+  or exists (select 1 from public.student_day_instructors sdi where sdi.student_id = skill_progress.student_id and sdi.instructor_id = auth.uid())
+  or exists (select 1 from public.sessions se where se.student_id = skill_progress.student_id
+       and se.instructor_id = auth.uid() and se.session_date = (now() at time zone 'Asia/Seoul')::date))
+with check (
+  public.is_director()
+  or exists (select 1 from public.students s where s.id = skill_progress.student_id and s.instructor_id = auth.uid())
+  or exists (select 1 from public.student_day_instructors sdi where sdi.student_id = skill_progress.student_id and sdi.instructor_id = auth.uid())
+  or exists (select 1 from public.sessions se where se.student_id = skill_progress.student_id
+       and se.instructor_id = auth.uid() and se.session_date = (now() at time zone 'Asia/Seoul')::date));
 
 -- media
 create policy "영상 조회" on public.media for select to authenticated using (

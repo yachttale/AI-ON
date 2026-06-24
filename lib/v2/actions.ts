@@ -349,12 +349,17 @@ export async function passLadderCascade(studentId: string, step: { id: string; k
     const { data: steps } = await supabase.from('skill_steps').select('id,key,ladder_order')
       .eq('curriculum_version_id', version.id).eq('stroke_id', stroke.id).eq('step_kind', 'ladder')
       .lte('ladder_order', step.ladder_order)
-    const rows = (steps ?? []).map(s => ({
+    const stepIds = (steps ?? []).map(s => s.id)
+    // 이미 통과한 단계는 제외하고 새 단계만 일반 INSERT (upsert ON CONFLICT 회피 — UPDATE 정책 불필요).
+    const { data: existing } = await supabase.from('skill_progress')
+      .select('skill_step_id').eq('student_id', studentId).in('skill_step_id', stepIds.length ? stepIds : ['00000000-0000-0000-0000-000000000000'])
+    const have = new Set((existing ?? []).map(r => r.skill_step_id))
+    const rows = (steps ?? []).filter(s => !have.has(s.id)).map(s => ({
       student_id: studentId, skill_step_id: s.id, source: 'observed', instructor_id: userId,
       source_session_id: sessionId, step_key_snapshot: s.key, ladder_order_snapshot: s.ladder_order,
     }))
     if (rows.length) {
-      const { error } = await supabase.from('skill_progress').upsert(rows, { onConflict: 'student_id,skill_step_id', ignoreDuplicates: true })
+      const { error } = await supabase.from('skill_progress').insert(rows)
       if (error) throw new Error(`진도 저장 실패: ${error.message}`)
     }
     // 클릭한 단계의 측정값(완주 시간·스트로크)만 기록
