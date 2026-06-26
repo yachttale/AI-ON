@@ -36,5 +36,6 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|icons|manifest.json).*)'],
+  // api(자체 인증: cron secret 등)·서비스워커·PWA manifest 는 인증 가드에서 제외
+  matcher: ['/((?!api|sw\\.js|_next/static|_next/image|favicon.ico|icons|manifest.json|manifest.webmanifest).*)'],
 }
