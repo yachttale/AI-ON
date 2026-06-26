@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation'
 import { getCurrentProfile } from '@/lib/v2/session'
 import { getMyPortfolio } from '@/lib/v2/analytics-data'
 import { CertManager } from './CertManager'
+import { PushToggle } from './PushToggle'
 
 const STROKE_COLOR: Record<string, string> = {
   freestyle: '#0ea5e9', backstroke: '#8b5cf6', breaststroke: '#10b981', butterfly: '#f59e0b',
@@ -96,6 +97,12 @@ export default async function MePage() {
       <section className="bg-white rounded-2xl border p-4 space-y-2">
         <h3 className="font-bold text-sm text-gray-700">자격증</h3>
         <CertManager items={p.certifications} />
+      </section>
+
+      {/* 알림 */}
+      <section className="bg-white rounded-2xl border p-4 space-y-2">
+        <h3 className="font-bold text-sm text-gray-700">알림</h3>
+        <PushToggle />
       </section>
 
       <p className="text-center text-[11px] text-gray-300">기록이 쌓일수록 통계가 정확해집니다</p>
