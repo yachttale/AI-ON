@@ -1,7 +1,7 @@
 # UP²U(어푸) — 작업 인계 / 할 일
 
 > 수영 진도관리 프로그램. 외부 강사 10명 테스터 베타 단계.
-> 마지막 정리: 2026-06-25 · 최신 커밋 `c0559b1`
+> 마지막 정리: 2026-06-26 · 푸시 알림(어제 미입력 리마인더) 추가
 
 ---
 
@@ -19,9 +19,15 @@
 | `029_v2_skill_progress_update_policy.sql` | UPDATE 정책(기준배치·과거날짜 완주 upsert 보호) | ⚠️ 확인 필요 |
 | `030_v2_progress_measure_select_rls.sql` | 진도/측정 **조회** 권한 | ✅ 적용됨 |
 | `031_v2_object_pickup_single.sql` | '물건 줍기'를 체크 항목으로 전환 | ⚠️ 미적용 |
-| `032_v2_instructor_certifications.sql` | 강사 자격증 테이블('나의 정보') | ⚠️ 미적용 |
+| `032_v2_instructor_certifications.sql` | 강사 자격증 테이블('나의 정보') | ✅ 적용됨 |
+| `033_v2_push_subscriptions.sql` | 푸시 알림 구독 테이블 | ✅ 적용됨 |
 
-**정리하면 지금 실행할 것: `026`, `029`, `031`, `032`** (나머지는 적용됨/포함됨)
+**2026-06-26 기준: 024~033 모두 적용 완료.**
+
+### 푸시 알림 환경변수 (Vercel — 등록 완료)
+- `NEXT_PUBLIC_VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`
+- `SUPABASE_SERVICE_ROLE_KEY`(Supabase Secret key `sb_secret_…`)
+- `CRON_SECRET` — **반드시 영문+숫자만**(한글 넣으면 Vercel 빌드 실패: HTTP 헤더 검증)
 
 ### 그 밖의 1회성 정리 (선택)
 - 진단용 임시 함수 제거: `drop function if exists public.debug_whoami();`
