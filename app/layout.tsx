@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from 'next'
 import { Geist } from 'next/font/google'
+import { SpeedInsights } from '@vercel/speed-insights/next'
 import './globals.css'
 
 const geist = Geist({ subsets: ['latin'] })
@@ -24,7 +25,10 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="ko" className={geist.className}>
-      <body className="min-h-screen bg-gray-50">{children}</body>
+      <body className="min-h-screen bg-gray-50">
+        {children}
+        <SpeedInsights />
+      </body>
     </html>
   )
 }
