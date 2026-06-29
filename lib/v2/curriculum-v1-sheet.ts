@@ -1,6 +1,6 @@
 // lib/v2/curriculum-v1-sheet.ts
 // 원장 확정 시트 "AI-ON 영법 단계표 v1" (Google Sheet 1JPRbVu5Psi0ApiQGorznCrBlc2fqx5Ny8nZL9mmZe-Q) 구조화본.
-// v1 UI가 쓰는 lib/curriculum.ts와 의도적으로 분리 — v2 시드 전용 소스다.
+// v2 시드(strokes/skill_steps) 전용 소스다. (구 lib/curriculum.ts는 미사용으로 제거됨)
 // 라벨은 시트 원문을 그대로 보존(오타 '콤비네에션' 포함). 측정/첫완주는 시트의 명시 컬럼을 그대로 옮긴다.
 import type { MetricType, StepKind } from '@/types/v2'
 export type { StepKind }
