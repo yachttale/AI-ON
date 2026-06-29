@@ -13,21 +13,14 @@ async function ctx() {
   if (!user) throw new Error('Unauthorized')
   return { supabase, userId: user.id }
 }
-// 기록 권한: 원장 ∪ 고정 담당 ∪ 오늘 요일 배정. (오늘 '내 수업' 판정과 동일 기준)
-async function assertOwns(supabase: Awaited<ReturnType<typeof createClient>>, userId: string, studentId: string) {
-  if (await getCurrentRole() === 'director') return  // 원장도 수업 — 모든 학생 기록 가능(role 조회는 캐시)
-  const { data: s } = await supabase.from('students').select('instructor_id').eq('id', studentId).maybeSingle()
-  if (s?.instructor_id === userId) return  // 고정 담당
-  // 요일 배정: 어느 요일이든 이 강사가 이 학생을 담당하면 인정.
-  // (진도 편집/통과는 '오늘 수업일'에 국한되지 않음 — 빠뜨린 기록 보정 등)
-  const { data: a } = await supabase.from('student_day_instructors')
-    .select('instructor_id').eq('student_id', studentId).eq('instructor_id', userId).limit(1)
-  if (a && a.length > 0) return
-  // 오늘 보강 담당(그날 세션 instructor_id 본인) — 비수업일 학생이라 위 조건엔 안 걸림
-  const { data: sess } = await supabase.from('sessions')
-    .select('instructor_id').eq('student_id', studentId).eq('session_date', kstToday()).maybeSingle()
-  if (sess?.instructor_id === userId) return
-  throw new Error('Forbidden')
+// 기록 권한: DB 함수 is_owner() 로 위임 — RLS 와 단일 규칙 공유(034 마이그레이션).
+// 판정 기준: ①원장 ②고정담당 ③요일배정(요일무관) ④오늘 보강 세션.
+// RLS 가 동일 규칙을 강제하므로 이 함수는 UX 가드(친절한 Forbidden·조기 차단) 역할.
+// userId 인자는 호출부 호환을 위해 유지(미사용 — is_owner 내부에서 auth.uid() 사용).
+async function assertOwns(supabase: Awaited<ReturnType<typeof createClient>>, _userId: string, studentId: string) {
+  const { data, error } = await supabase.rpc('is_owner', { p_student_id: studentId })
+  if (error) throw error
+  if (data !== true) throw new Error('Forbidden')
 }
 const today = kstToday
 
@@ -287,15 +280,14 @@ async function ensureSessionForDate(supabase: any, userId: string, studentId: st
   if (error) throw error
   return data.id
 }
-async function assertOwnsForDate(supabase: Awaited<ReturnType<typeof createClient>>, userId: string, studentId: string, date: string) {
-  if (await getCurrentRole() === 'director') return
-  const { data: s } = await supabase.from('students').select('instructor_id').eq('id', studentId).maybeSingle()
-  if (s?.instructor_id === userId) return
-  const weekday = new Date(date + 'T12:00:00+09:00').getDay()
-  const { data: a } = await supabase.from('student_day_instructors')
-    .select('instructor_id').eq('student_id', studentId).eq('weekday', weekday).maybeSingle()
-  if (a?.instructor_id === userId) return
-  throw new Error('Forbidden')
+// 과거 날짜 기록 권한도 is_owner() 로 위임 — RLS 와 단일 규칙 공유.
+// (구 구현은 ③을 '그 날짜 요일'로 한정해 RLS(요일무관)와 이미 불일치했음 → is_owner 로 통일.
+//  RLS 가 허용하는 범위 내이므로 권한 확대 아님. 날짜 제한은 validateRecordDate 가 별도 담당.)
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+async function assertOwnsForDate(supabase: Awaited<ReturnType<typeof createClient>>, _userId: string, studentId: string, _date: string) {
+  const { data, error } = await supabase.rpc('is_owner', { p_student_id: studentId })
+  if (error) throw error
+  if (data !== true) throw new Error('Forbidden')
 }
 export async function markAbsentForDate(studentId: string, absent: boolean, date: string) {
   validateRecordDate(date)
