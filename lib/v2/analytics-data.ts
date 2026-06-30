@@ -274,7 +274,8 @@ export async function getStudentDashboard(studentId: string): Promise<StudentDas
   let totalDistanceM = 0
   for (const m of meas ?? []) {
     recordDates.add(m.measured_on)
-    if (m.metric_type === 'laps') totalDistanceM += Number(m.value) * 50
+    // 당일 총 바퀴(skill_step_id=null)만 거리 환산 — 단계귀속 laps(마스터)는 같은 수영의 세부라 더하면 이중계산(2× 오류)
+    if (m.metric_type === 'laps' && m.skill_step_id == null) totalDistanceM += Number(m.value) * 50
     else if (m.metric_type === 'distance_m') totalDistanceM += Number(m.value)
   }
   for (const s of sessions ?? []) recordDates.add(s.session_date)
@@ -372,28 +373,33 @@ export async function getStudentMasterStats(studentId: string): Promise<StudentM
   if (masterSteps.length === 0) return { strokes: [] }
 
   const stepIds = masterSteps.map(s => s.id)
-  const [{ data: allMeas }, { data: todayMeas }] = await Promise.all([
-    supabase.from('measurements').select('skill_step_id,value').eq('student_id', studentId).eq('metric_type', 'laps').in('skill_step_id', stepIds),
-    supabase.from('measurements').select('skill_step_id,value').eq('student_id', studentId).eq('metric_type', 'laps').eq('measured_on', today).in('skill_step_id', stepIds),
-  ])
-  const totalByStep = new Map<string, number>()
-  for (const m of allMeas ?? []) totalByStep.set(m.skill_step_id, (totalByStep.get(m.skill_step_id) ?? 0) + Number(m.value))
-  const todayByStep = new Map<string, number>()
-  for (const m of todayMeas ?? []) todayByStep.set(m.skill_step_id, (todayByStep.get(m.skill_step_id) ?? 0) + Number(m.value))
+  // v_clean_laps(037): lap_scope='step' 행을 (단계,일)별로 집계. laps=SUM(value),
+  // distance_m 은 IM(track_key='im') 제외 + pool_lane_m() 환산까지 뷰가 처리 → *50·IM 분기 제거.
+  const { data: lapRows } = await supabase
+    .from('v_clean_laps')
+    .select('skill_step_id,measured_on,laps,distance_m')
+    .eq('student_id', studentId)
+    .eq('lap_scope', 'step')
+    .in('skill_step_id', stepIds)
 
-  const IM_TRACK_KEYS = ['im']
-  const strokes: MasterStrokeStats[] = masterSteps.map(s => {
-    const isIM = IM_TRACK_KEYS.includes(s.track_key)
-    const totalLaps = totalByStep.get(s.id) ?? 0
-    return {
-      stepId: s.id,
-      strokeKey: s.track_key,
-      strokeLabel: s.track_label,
-      todayLaps: todayByStep.get(s.id) ?? 0,
-      totalLaps,
-      totalDistanceM: isIM ? 0 : totalLaps * 50,
-    }
-  })
+  const totalLapsByStep = new Map<string, number>()
+  const totalDistByStep = new Map<string, number>()
+  const todayLapsByStep = new Map<string, number>()
+  for (const r of lapRows ?? []) {
+    const id = r.skill_step_id as string
+    totalLapsByStep.set(id, (totalLapsByStep.get(id) ?? 0) + Number(r.laps))
+    totalDistByStep.set(id, (totalDistByStep.get(id) ?? 0) + Number(r.distance_m ?? 0))
+    if (r.measured_on === today) todayLapsByStep.set(id, (todayLapsByStep.get(id) ?? 0) + Number(r.laps))
+  }
+
+  const strokes: MasterStrokeStats[] = masterSteps.map(s => ({
+    stepId: s.id,
+    strokeKey: s.track_key,
+    strokeLabel: s.track_label,
+    todayLaps: todayLapsByStep.get(s.id) ?? 0,
+    totalLaps: totalLapsByStep.get(s.id) ?? 0,
+    totalDistanceM: totalDistByStep.get(s.id) ?? 0,
+  }))
   return { strokes }
 }
 
