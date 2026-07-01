@@ -6,10 +6,12 @@
 
 코드 작성 전 반드시 이 순서로 읽는다:
 
-1. **Second Brain Compass**: `C:\Users\hyo seong\Desktop\Claude\second brain\second brain\AI-Sessions\wiki\projects\starkids-swim.md`
+> 두뇌 저장소 = GitHub `yachttale/claude-brain` (private), 로컬 = **양쪽 컴퓨터 모두 `%USERPROFILE%\Desktop\CLAUDE BRAIN`**. 읽기 전 `git pull`.
+
+1. **Compass**: `<CLAUDE BRAIN>\projects\up2u\README.md`
    → `## 현재 방향` 확인 (up2u: AI 분석 DB 구축)
-2. **알려진 버그**: `C:\Users\hyo seong\Desktop\Claude\second brain\second brain\AI-Sessions\wiki\errors\starkids-swim-supabase-fk-중복.md`
-3. **작업 로그**: `C:\Users\hyo seong\Desktop\Claude\second brain\second brain\log.md`
+2. **알려진 버그**: `<CLAUDE BRAIN>\knowledge\errors\starkids-supabase-fk-중복.md`
+3. **작업 로그**: `<CLAUDE BRAIN>\log.md` + 핸드오프 `<CLAUDE BRAIN>\NOW.md`
 
 ---
 
@@ -23,16 +25,17 @@ AI 직접 연동 전 단계 — **AI가 잘 분석할 수 있는 DB 구축**
 
 ---
 
-## 옵시디언 저장 경로
+## 두뇌 저장소(claude-brain) 저장 경로
 
-`이번 작업 내용 옵시디언에 저장해줘` / `옵시디언 참조` 명령 시:
+> 2026-07-02 Obsidian Second Brain에서 이관됨. `저장해줘` 명령 시 (저장 전 `git pull`, 저장 후 commit+push):
 
-| 용도 | 경로 |
+| 용도 | 경로 (CLAUDE BRAIN 기준) |
 |------|------|
-| raw (원본) | `C:\Users\hyo seong\Desktop\Claude\second brain\second brain\AI-Sessions\raw\` |
-| wiki | `C:\Users\hyo seong\Desktop\Claude\second brain\second brain\AI-Sessions\wiki\` |
-| log | `C:\Users\hyo seong\Desktop\Claude\second brain\second brain\log.md` |
-| Compass | `C:\Users\hyo seong\Desktop\Claude\second brain\second brain\AI-Sessions\wiki\projects\starkids-swim.md` |
+| Compass (프로젝트 나침반) | `projects/up2u/README.md` |
+| 재사용 지식 | `projects/up2u/` (프로젝트 전용) 또는 `knowledge/` (범용) |
+| 버그 해결법 | `knowledge/errors/` |
+| log | `log.md` |
+| 핸드오프 | `NOW.md` |
 
 ---
 

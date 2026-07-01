@@ -34,7 +34,7 @@
 - 세션 작업이 끝난 후 "저장해줘" 명령 시
 - 에러를 발견하고 기록이 필요할 때
 - 프로젝트 방향 변경 시 Compass 업데이트
-- **예시**: "이번 작업 옵시디언에 저장해줘" → Knowledge Manager에게
+- **예시**: "이번 작업 두뇌 저장소에 저장해줘" → Knowledge Manager에게
 
 ---
 
@@ -89,4 +89,4 @@
 
 - 공통 규칙: `CLAUDE.md`
 - Agent 정의: `agents/` 폴더
-- 현재 방향: Second Brain Compass (`wiki/projects/starkids-swim.md`)
+- 현재 방향: 두뇌 저장소 Compass (`CLAUDE BRAIN\projects\up2u\README.md`)
